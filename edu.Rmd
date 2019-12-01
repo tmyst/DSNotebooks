@@ -47,7 +47,9 @@ ldf <- ldf %>% filter(count!=0) %>% group_by(education, sex, answer) %>% expand(
 #### linear regression
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 ```{r}
-ldf <- ldf %>% mutate(answer = recode(answer, "agree" = 1.0, "disagree" = 0.0, .default = NA_real_))
+ldf <- ldf %>% 
+  mutate(answer = recode(answer, "agree" = 1L, "disagree" = 0L, .default = NA_integer_)) %>% 
+  mutate(sex = recode(sex, "Male" = 1L, "Female" = 0L, .dafault = NA_integer_))
 ldf$answer %>% table(exclude = NULL)
 linear_model <- model <- lm(answer ~ education, data = ldf)
 model
@@ -83,7 +85,6 @@ ggarrange(p1, p3, p2, ncol = 1, heights = c(2, 6, 2), align = "v")
 ```
 
 ```{r}
-ggarrange
 blankPlot <- ggplot()+geom_blank(aes(1,1))+
   theme(
     plot.background = element_blank(), 
@@ -100,7 +101,11 @@ blankPlot <- ggplot()+geom_blank(aes(1,1))+
      )
 ```
 ```{r}
-
+data <- edu_data <- list(N = nrow(ldf), y = ldf$answer, edu = ldf$education, sex = ldf$sex)
+fit <- edu_fit <- stan(file = "edu_logit.stan", data = data, seed = 1234)
 ```
 
+```{r}
+fit
+```
 
