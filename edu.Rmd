@@ -1,0 +1,106 @@
+---
+title: "Stan_Intro(Practical Bayes Modeling H.T)"
+author: "Tmyst"
+date: "2019/12/1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import libraries
+```{r include=FALSE}
+library(tidyverse)
+library(data.table)
+library(rstan)
+library(rstantools)
+library(brms)
+library(psych)
+library(MASS)
+```
+
+## Data
+
+```{r }
+df <- HSAUR::womensrole
+df %>% DT::datatable()
+```
+
+
+```{r }
+library(RColorBrewer)
+df %>% mutate(n = agree + disagree) %>% ggplot() + geom_bar(aes(x = education, y = n, fill = sex, color = sex), stat="identity") +theme_minimal(base_size = 16) 
+```
+
+### Convert data
+
+```{r }
+ldf <- df %>% gather(key = answer, value = count, agree, disagree) 
+ldf
+```
+
+```{r }
+ldf <- ldf %>% filter(count!=0) %>% group_by(education, sex, answer) %>% expand(count = 1:count) %>% ungroup %>% dplyr::select(-count) 
+
+```
+#### linear regression
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+ldf <- ldf %>% mutate(answer = recode(answer, "agree" = 1.0, "disagree" = 0.0, .default = NA_real_))
+ldf$answer %>% table(exclude = NULL)
+linear_model <- model <- lm(answer ~ education, data = ldf)
+model
+
+```
+```{r}
+ldf %>% mutate(answer = factor(answer)) %>% ggplot() + geom_histogram(aes(x = education, fill = answer), alpha = 0.5, color = "skyblue4", position = "fill", bins = 20) + theme_light(base_size = 16)
+```
+
+####
+https://felixfan.github.io/stacking-plots-same-x/
+https://rpkgs.datanovia.com/ggpubr/reference/ggarrange.html
+http://www.sthda.com/english/wiki/wiki.php?id_contents=7930
+http://www.sthda.com/english/articles/24-ggpubr-publication-ready-plots/81-ggplot2-easy-way-to-mix-multiple-graphs-on-the-same-page/
+http://motw.mods.jp/R/ggplot_geom_bar.html
+
+
+```{r}
+p1 <- ldf %>% mutate(answer = factor(answer)) %>% filter(answer != 1) %>% ggplot() + geom_histogram(aes(x = education), alpha = 0.5, fill = "skyblue3", color = "skyblue4", position = "identity", bins = 20) + theme_light(base_size = 16) + theme(axis.title.x = element_blank(), axis.text.x = element_text(vjust = 10), axis.ticks.x = element_blank())
+
+p2 <- ldf %>% mutate(answer = factor(answer)) %>% filter(answer == 1) %>%  ggplot() + geom_histogram(aes(x = education), alpha = 0.5, fill = "skyblue3", color = "skyblue4", position = "identity", bins = 20) + theme_light(base_size = 16) + scale_y_reverse() + theme(axis.title.x = element_blank(), axis.text.x = element_text(vjust = 10), axis.ticks.x = element_blank())
+
+p3 <- ldf %>% ggplot(aes(x = education, y=answer)) + geom_point() + geom_jitter(height = 0.08, width = 0.02) + theme_light(base_size = 16) + theme(axis.title.x = element_blank(), axis.text.x = element_blank(), title = element_blank(), legend.title = element_blank(), panel.spacing.x = element_blank(), panel.spacing.y = element_blank())
+
+gridExtra::grid.arrange(p1, p3, p2, heights = c(0.25, 0.5, 0.25))
+
+```
+
+#### Function to make a blank plot
+```{r}
+library(ggpubr)
+ggarrange(p1, p3, p2, ncol = 1, heights = c(2, 6, 2), align = "v")
+```
+
+```{r}
+ggarrange
+blankPlot <- ggplot()+geom_blank(aes(1,1))+
+  theme(
+    plot.background = element_blank(), 
+   panel.grid.major = element_blank(),
+   panel.grid.minor = element_blank(), 
+   panel.border = element_blank(),
+   panel.background = element_blank(),
+   axis.title.x = element_blank(),
+   axis.title.y = element_blank(),
+   axis.text.x = element_blank(), 
+   axis.text.y = element_blank(),
+   axis.ticks = element_blank(),
+   axis.line = element_blank()
+     )
+```
+```{r}
+
+```
+
+
