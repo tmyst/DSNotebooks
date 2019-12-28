@@ -1,0 +1,306 @@
+---
+title: "Tips_基本的な集計"
+subtitle: "Health Data Analysis"
+author: "Tomoya Saito"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extensions: -ascii_identifiers
+    self_containd: true
+    lightbox: true
+    toc_float: true
+    toc_depth: 3
+
+---
+      
+```{r knitr_init, cache=FALSE, include=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=FALSE,
+                 cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+
+```
+
+## Basics of how to create summary tables
+
+Commands and processes for basic data aggregations using standard packages such as dpylyr, tidyr, purrr, stringr, ggplot2.
+```{r }
+# datasets::Theoph
+# datasets::swiss
+# datasets::HairEyeColor
+# datasets::USPersonalExpenditure
+# datasets::UCBAdmissions
+# datasets::esoph
+# datasets::warpbreaks
+# datasets::trees
+# MASS::Animals
+# MASS::Aids2
+# MASS::Melanoma
+```
+ここではMASSパッケージのAidsを例にする。
+```{r echo=TRUE}
+df <- MASS::Aids2
+df
+```
+まずはtidyverseをload
+```{r echo=TRUE}
+library(tidyverse)
+```
+
+データの次元の確認
+```{r echo=TRUE}
+dim(df)
+```
+見栄えよくしたい場合はdata.frameにしてしまう。
+```{r echo=TRUE}
+dim_df <- data.frame(rows = nrow(df), columns = ncol(df))
+dim_df
+```
+名前の変更。setNamesはlist型の要素名をセットする。
+変数（例えばaとする）のあとにパイプ演算子（ %>% ）と関数（例えばfとする）を入れると、
+aに対してfを適用した結果を出すことになる。fの引数の中ではドット（"."）と省略系してaを表すことができる。
+第一引数の場合はそれも省略することが可能である。
+第二引数以降の場合は省略せずに"."をきちんと入れる必要がある。
+```{r echo=TRUE}
+dim_df %>% setNames(., nm = c("N rows", "N cols"))
+```
+カラムの内容の確認。各カラムのタイプはどうなっているか調べておく。
+タイプには数値型(integer, double)、文字列型(character)、カテゴリ型(factor)などがある。
+Rだと特にfactorの扱いには少し気をつける必要がある。
+csvから読み込んだデータの場合は、読み込む際に特に指定しなければ読み込み関数が推定する。
+読み込みの癖もあるので、よく使われる関数1, 2に絞って覚えておくのが良い。
+```{r echo=TRUE}
+sapply(df, class) # "typeof" function are sequentially appled to df
+```
+丁度factor型が出てきた。classは一皮かぶっているので、一段深く覗いてみる。
+```{r echo=TRUE}
+sapply(df, typeof)
+```
+一緒にすると
+```{r echo=TRUE}
+bind_rows(sapply(df, class), sapply(df, typeof))
+```
+まどろっこしいことはやめてひと目で確認してみよう。
+```{r echo=TRUE}
+str(df)
+```
+
+```{r echo=TRUE}
+summary(df)
+```
+
+パッケージに付属の関数も利用しやすいものがいくつかある。
+
++ mosaicを使用
+inspect関数は型ごとに結果を出力してくれる。※ パッケージをlibrary(mosaic)でロードしておけば関数名のみ(inspect)で呼び出せるが、
+異なるパッケージ内に同じ名前の関数があると、どちらかが優先されるため、あまり多くのパッケージのロードは避けたほうが良い。
+mosaic::などとパッケージ名のあとに関数を指定することで、どのパッケージの関数を使うかを明示している。
+この方法であれば、パッケージをインストールさえしてあれば、ロードなしで指定できる。
+```{r echo=TRUE}
+inspected <- mosaic::inspect(df)
+inspected[1]
+```
+
++ levelsカラムで層の数を把握できる
++ missingカラムは欠損値の個数だが、このデータでは存在しない
++ distributionカラムをみると、どの程度偏った集団になっているか把握できる。例えばこのデータでは男性が大半である。
+
+男女といえば、年齢も気になるところ。最初から5歳毎、10歳毎などに区分されていることもあれば、連続値のこともある。
+このデータにおいては連続値（整数）で格納されている。
+```{r echo=TRUE}
+inspected[2]
+```
+
++ psychを使用
+若干仕様が異なってくる。好きなものを使うのが良い。
+```{r echo=TRUE}
+psych::describe(df)
+```
+
+さてageがintegerだったので、わかりやすい集計表にするには、これを区切っていく必要がある。
+区分がビジネス上の要件で決まる場合もあるので、区切り方は一通りではない。まずヒストグラムを見てみよう。
+```{r echo=TRUE}
+hist(df$age,col = "steelblue3", breaks = 100, xlab = "Age")
+```
+
+見た目を整えたい場合や複雑な場合はggplotを使うのがおすすめ
+```{r echo=TRUE}
+df %>% ggplot(data = .) + 
+  geom_histogram(aes(x = age), fill = "darkorange", color = "gray90", binwidth = 2) + 
+  theme_bw(base_size = 16, base_family = "Times") +
+  xlab("Age") + ylab("# of sample") +
+  theme(axis.text.x = element_text(size = 14))
+
+```
+ここでは10年刻みにしたカラムを作成してみる。maxは82歳, minは0となっているから、
+```{r echo=TRUE}
+new_age_col <- "age_c"
+df[[new_age_col]] <- cut(df$age, breaks = seq(0, 90, 10), include.lowest = T, right = F) 
+df[[new_age_col]] 
+```
+
+だいぶ偏りはあるが、以下のようになった。
+```{r echo=TRUE}
+df[[new_age_col]] %>% table(exclude = NULL)
+```
+区切り方を変更してみよう。
+```{r echo=TRUE}
+df[[new_age_col]] <- cut(df$age, breaks = c(0, 30, 50, 90), right = F, include.lowest = T)
+df[[new_age_col]] %>% table(exclude = NULL)
+```
+
+
+```{r echo=TRUE}
+df %>% select(age_c, sex) %>% table
+```
+外に出力したい場合
++ クリップボードにコピー
+これは、そのままペーストコマンドでexcelなどに貼り付けることが可能
+```{r echo=TRUE}
+df %>% select(age_c, sex) %>% table %>% xtable::xtable() %>% print(type = "html", file = "clipboard-128")
+```
+
++ 診断と脂肪の時間差を表すカラムを追加する。y = ..density..の指定とposition = "identity" (その他"stack", "jitter"など)に注意
+```{r echo=TRUE}
+library(RColorBrewer)
+library(ggsci)
+library(scico)
+
+df %>% mutate(diff = death -diag) %>% arrange(diff) %>%  
+  ggplot() + geom_histogram(aes(x = diff, fill = sex, color = sex, y = ..density..), position = "identity", bins = 16) + 
+  scale_fill_npg(alpha = 0.3) +
+  scale_color_npg(alpha = 0.8) + 
+  theme_light()
+
+```
+
++ さらに年齢でも分けてみる。
+年齢が上がるほど診断から死に至るまでの時間は短いと言える。ただし、寿命も関係すると考えられるので、特に老人においてこの病気が死亡時期を早める影響が強いかどうかはまだ不明である。
+```{r echo=TRUE}
+df %>% mutate(diff = death -diag) %>% arrange(diff) %>%  
+  ggplot() + geom_histogram(aes(x = diff, y = ..density.., fill = sex, color = sex), bins = 16) + 
+  facet_grid(~age_c ~ sex) +
+  theme_light() + 
+  scale_fill_npg(alpha = 0.5) +
+  scale_color_npg(alpha = 0.8) + 
+  theme(strip.text.x = element_text(size = 16),
+        strip.text.y = element_text(size = 16),
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 11),
+        axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
+
+```
+
++ 時間も区切り、早くに死亡した人の割合を見てみる。
+
+```{r echo=TRUE}
+df <- df %>% mutate(diff = death - diag, diff_c = cut(diff, breaks = c(0, 200, 500, Inf), right = F, include.lowest = T)) 
+df %>% select(age_c, sex, diff_c) %>% mutate(early_death = ifelse(diff_c=="[0,200)", 1, 0)) %>% 
+  group_by(sex, age_c) %>% 
+  summarize(count = n(), early_death = sum(early_death, na.rm = T)) %>% 
+  mutate(ratio = early_death/count)
+```
+
+### 喫煙のリスクのはなし
+さてここからはある書籍に紹介されていた喫煙リスクの話。
+```{r echo=TRUE}
+smoke_t1 <- expand.grid(c("reach20", "no"), c("lcd", "well")) %>% mutate(count = c(56, 32, 25405, 21863)) %>% spread(key = Var2, value = count) 
+names(smoke_t1)[1] <- "smoke"
+smoke_t1
+```
+
+```{r echo = TRUE}
+smoke_t2 <- data.frame(smoke = c("no", "under20", "reach20"), death = c(32, 86, 56), count = c(21895, 44184, 25461))
+smoke_t2
+```
+```{r}
+smoke_t3 <- expand.grid(c("[40_59]", "[60-)"), c("aggr", "non_aggr"), c("no", "under20", "reach20")) %>% 
+  setNames(nm = c("age_c", "work", "smoke")) %>% 
+  arrange(age_c, work, smoke) %>% 
+  mutate(death = c(3, 20, 16, 8, 20, 20, 14, 32, 8, 7, 14, 12),
+         count = c(5999, 12753, 7150, 8021, 17923, 13434, 4407, 7291, 2241, 3468, 6217, 2636) )
+smoke_t3
+```
+
+まずはtable1分割表における$\chi^2$検定量から。
+$\chi^2$検定で検定している仮説としては、帰無仮説:$p_{ij} = p_{i}p_{j}$で対立仮説$p_{ij}\ne p_{i}p_{j}$
+また、
+$$\chi^2 = \frac{( y_{ij} - y_{i.}y_{.j}/y_{..} )^2}{y_{i.} y_{.j}/y_{..}} \space\space のすべてのセルに関する和$$
+
+である。
+```{r}
+chisq.test(x = smoke_t1[,2:3] %>% as.matrix, correct = F) 
+```
+
+ 一応確率で確かめておこう。独立でない場合に期待される確率が左側、実際が右側である。
+```{r}
+sums <- smoke_t1 %>% select(-1) %>% colSums
+smoke_t1_all <- bind_rows(smoke_t1, sums) %>% mutate(smoke = ifelse(is.na(smoke), "all", smoke %>% as.character())) %>% mutate(n = lcd + well)
+p.1 <- smoke_t1_all[3, 2]/smoke_t1_all[3, 4]
+p.2 <- smoke_t1_all[3, 3]/smoke_t1_all[3, 4]
+p1. <- smoke_t1_all[1, 4]/smoke_t1_all[3, 4]
+p2. <- smoke_t1_all[2, 4]/smoke_t1_all[3, 4]
+p11 <- p1. * p.1
+p12 <- p1. * p.2
+p21 <- p2. * p.1
+p22 <- p2. * p.2
+
+exp_ps <- data.frame(p.1 = c(p11, p21), p.2 = c(p12, p22)) %>% setNames(nm = c("lcd", "well"))
+res_ps <- smoke_t1[, 2:3] %>% as.matrix %>% prop.table() %>% as.data.frame 
+bind_cols(exp_ps, res_ps)
+```
+
+$\chi^2$統計量を自分で算出してみよう。
+```{r echo=TRUE}
+smoke_t1_matrix <- smoke_t1 %>% select(-1) %>% as.matrix
+rowSums(smoke_t1_matrix) %x% (colSums(smoke_t1_matrix) %>% t) / sum(smoke_t1_matrix)
+
+bunshi_ <- (smoke_t1_matrix - (rowSums(smoke_t1_matrix) %x% (colSums(smoke_t1_matrix) %>% t))/sum(smoke_t1_matrix))
+bunbo_  <- sqrt(prod(c(rowSums(smoke_t1_matrix),colSums(smoke_t1_matrix)))/sum(smoke_t1_matrix)^3)
+
+chisq_bunshi <- bunshi_^2
+chisq_bunbo  <- (rowSums(smoke_t1_matrix) %x% (colSums(smoke_t1_matrix) %>% t) )/sum(smoke_t1_matrix) 
+
+chi2_stat <- (chisq_bunshi/chisq_bunbo) %>% sum
+pchi2     <- 1 - pchisq(3.455936, df = 1) 
+c(chi2_stat, pchi2)
+```
+これは、次のコマンドの結果に等しい
+```{r echo=TRUE}
+chisq.test(as.matrix(smoke_t1_matrix), correct = F)
+```
+
+ちなみに$u_{11}$統計量は
+```{r}
+(bunshi_/bunbo_)[1,1]
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
