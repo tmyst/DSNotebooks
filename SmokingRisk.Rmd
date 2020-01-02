@@ -287,20 +287,55 @@ chisq.test(as.matrix(smoke_t1_matrix), correct = F)
 ```{r}
 (bunshi_/bunbo_)[1,1]
 ```
+喫煙の例では、「喫煙」の「肺がんでの死亡」との関連において、年齢が交絡因子となっている。
+```{r echo=TRUE}
 
-```{r}
+p1 <- smoke_t3 %>% 
+  ggplot() + geom_bar(aes(x = age_c, y =count, color = smoke, fill = smoke), stat = "identity") + theme_bw(base_size = 14) +
+  scale_color_npg() + scale_fill_npg() 
+p2 <- smoke_t3 %>% group_by(age_c) %>% mutate(sum_count = sum(count)) %>% ungroup %>% 
+  ggplot() + geom_bar(aes(x = age_c, y =count/sum_count, color = smoke, fill = smoke), stat = "identity") + theme_bw(base_size = 14) +
+  scale_color_npg() + scale_fill_npg() + ylab("proportion")
+
+gridExtra::grid.arrange(p1,  p2)
+```
+もっとわかりやすいのは以下の見方かもしれない。
+ + 年齢区分で分離した場合、総じて肺がんでの死亡率は高齢の方が高い。
+ + 60歳以上の集団では、1日20本以上の喫煙者の割合（緑）が40歳以上60歳未満のそれに比べて小さい。
+
+もし年齢区分によらずこれらの集団の人数割合が同程度であれば、2つの集団を一緒にしてしまった場合でも
+同じリスク差が出るはずであるが、この例ではバランスが違うので、「40-59の集団に高齢者集団を混ぜる」と考えたとき、
+「もともとリスクの高い非喫煙者」が増える(14020人に対し7875人)割には「さらにリスクの高いヘビースモーカー」が増えない(20584人に対して4877人)。
+```{r echo=TRUE}
+p3 <- smoke_t3 %>% group_by(age_c, smoke) %>% select(-work) %>% summarize_all(sum) %>% mutate(ratio = death/count) %>% 
+  ggplot() + 
+  geom_point(aes(x = age_c, color = smoke, y = ratio, size = count ), alpha = 0.7) + 
+  geom_text(aes(x=age_c, y = ratio, label = count) ) +
+  theme_bw(base_size = 14) +
+  scale_color_npg() + ylim(c(0.0005, 0.0045)) + scale_size(range = c(2, 12))
+p3
 
 ```
 
 ```{r}
-
+smoke_t3 %>% group_by(age_c, smoke) %>% nest %>% mutate(chisq_raw = map(data, ~chisq.test))
+tmp <- smoke_t3 %>% mutate(others = count - death) %>% select(-count) %>% group_by(age_c, work) %>% nest %>% 
+  mutate(chisq_raw = map(data, ~ chisq.test(.x %>% select("death", "others") , correct = T)))
+tmp$chisq_raw
 ```
 
 ```{r}
+smoke_t3_mod <- smoke_t3 %>% mutate(others = count - death)
+t1 <- smoke_t3_mod %>% filter(age_c == "[40_59]", work == "aggr") %>% select(death, others) %>% as.matrix %>% as.table;t1
+t2 <- smoke_t3_mod %>% filter(age_c == "[40_59]", work == "non_aggr") %>% select(death, others)%>% as.matrix %>% as.table;t2
+t3 <- smoke_t3_mod %>% filter(age_c == "[60-)", work == "aggr") %>% select(death, others)%>% as.matrix %>% as.table;t3
+t4 <- smoke_t3_mod %>% filter(age_c == "[60-)", work == "non_aggr") %>% select(death, others)%>% as.matrix %>% as.table;t4
+tab <- array(c(t1, t2, t3, t4), dim = c(3,2,4), 
+             dimnames = list(c("smoke = 0", "smoke < 20", "smoke >= 20"), c("lung_cancer_death", "normal")));tab
 
 ```
-
+4つの層を合成した$\chi^2$統計量で検定を行う
 ```{r}
-
+mantelhaen.test(tab)
 ```
 
