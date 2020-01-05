@@ -1,0 +1,123 @@
+---
+title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
+subtitle: "04"
+author: "Tomoya Saito"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+  highlight: zenburn
+  md_extensions: -ascii_identifiers
+  self_containd: true
+  lightbox: true
+  toc_float: true
+  toc_depth: 3
+
+---
+  
+data was downloaded from [this website](https://github.com/logics-of-blue/book-r-stan-bayesian-model-intro)
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(ggfortify)
+library(scico)
+library(RColorBrewer)
+library(wesanderson)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r}
+library(tidyverse)
+library(rstan)
+library(bayesplot)
+library(brms)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+path <-  "/Users/tomoya/Documents/dataset/bayesian_intro_baba/3-6-1-beer-sales-3.csv"
+df <- read_csv(path)
+df
+```
+```{r}
+mosaic::inspect(df)[1]
+```
+
+```{r}
+mosaic::inspect(df)[2]
+```
+
+```{r}
+ggplot(df) + 
+  geom_violin(aes(x = weather, y = sales), fill = "#DDDDDD", color = "gray70", alpha = 0.5) + 
+  geom_point(aes(x = weather, y = sales, color = weather)) +
+  theme_bw(base_size = 14) + 
+  scale_color_npg() + 
+  scale_y_continuous(breaks = c(0, 20, 40, 60, 80, 100, 120), limits = c(15, 130)) +
+  theme(legend.text = element_text(size = 12), 
+        legend.title = element_text(size = 14), 
+        legend.background = element_rect(colour = "gray80"),
+        legend.position = c(0, 1),
+        legend.justification = c(0, 1)) 
+
+```
+
+```{r}
+anova_brms <- brm(formula = sales ~ weather, 
+                  family = gaussian(),
+                  data = df,
+                  seed = 1,
+                  prior = c(set_prior("", class = "Intercept"),
+                            set_prior("", class = "sigma"))
+                  )
+```
+
+```{r}
+anova_brms
+```
+
+```{r}
+eff <- marginal_effects(anova_brms)
+plot(eff, points = F)[[1]] + theme_bw(base_size = 14) + scale_color_npg()
+```
+
+```{r}
+formula_lm <- formula(sales ~ weather)
+X <- model.matrix(formula_lm, df)
+stan_result <- stan(
+  file = "sales_weather_design_matrix.stan",
+  data = list(N = nrow(X), K = ncol(X), X = X, Y = df$sales),
+  seed = 1, chains = 4, iter = 2000, warmup = 1000, thin = 1)
+```
+
+```{r}
+mcmc_extracted <- extract(stan_result, permuted = F)
+mcmc_extracted %>% dimnames
+```
+
+```{r}
+color_scheme_set("gray")
+mcmc_intervals(mcmc_extracted, pars = c("b[1]", "b[2]", "b[3]"), prob = 0.8, prob_outer = 0.95)
+```
+
+```{r}
+mcmc_dens(mcmc_extracted, pars = c("b[1]", "b[2]", "b[3]"), prob = 0.8, prob_outer = 0.95)
+```
+```{r}
+mcmc_areas(mcmc_extracted, pars = c("b[1]", "b[2]", "b[3]"), prob = 0.6, prob_outer = 0.99)
+```
+```{r}
+print(stan_result, probs = c(0.025, 0.5, 0.975))
+```
+
