@@ -1,0 +1,208 @@
+---
+title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
+subtitle: "04"
+author: "Tomoya Saito"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+  highlight: zenburn
+  md_extensions: -ascii_identifiers
+  self_containd: true
+  lightbox: true
+  toc_float: true
+  toc_depth: 3
+
+---
+  
+data was downloaded from [this website](https://github.com/logics-of-blue/book-r-stan-bayesian-model-intro)
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(ggfortify)
+library(scico)
+library(RColorBrewer)
+library(wesanderson)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r}
+library(tidyverse)
+library(rstan)
+library(bayesplot)
+library(brms)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+path <-  "/Users/tomoya/Documents/dataset/bayesian_intro_baba/3-2-1-beer-sales-2.csv"
+df <- read_csv(path)
+df
+```
+
+```{r}
+simple_lm_brms <- brm(
+  formula = sales ~ temperature,
+  family = gaussian(link = "identity"),
+  data = df,
+  seed = 1
+)
+```
+
+```{r}
+simple_lm_brms
+```
+
+```{r}
+as.mcmc(simple_lm_brms, combine_chains = T)
+```
+
+```{r}
+as.mcmc(simple_lm_brms, combine_chains = F)
+```
+```{r}
+color_scheme_set("mix-blue-pink")
+plot(simple_lm_brms)
+```
+
+```{r}
+simple_lm_formula <- bf(sales ~ temperature)
+```
+
+```{r}
+list(gaussian(), poisson(), inverse.gaussian(), stats::binomial())
+```
+
+```{r}
+simple_lm_brms_2 <- brm(
+  formula = simple_lm_formula, 
+  family = stats::gaussian(),
+  data = df,
+  seed = 1,
+  chains = 4,
+  iter = 2000,
+  warmup = 1000,
+  thin = 1
+  )
+
+```
+```{r}
+prior_summary(simple_lm_brms_2)
+```
+```{r}
+simple_lm_brms_3 <- brm(
+  formula = sales ~ temperature, 
+  data = df,
+  family = gaussian(),
+  seed = 1,prior = c(set_prior("", class = "Intercept"),
+                     set_prior("", class = "sigma"))
+)
+```
+
+```{r}
+get_prior(formula = sales ~ temperature, 
+          family = gaussian(),
+          data = df
+          )
+```
+
+```{r}
+prior_summary(simple_lm_brms_3)
+```
+
+```{r}
+stancode(simple_lm_brms_3)
+```
+
+```{r}
+standata(simple_lm_brms_3)
+```
+
+```{r}
+standata_brms <- make_standata(
+  formula = sales ~ temperature,
+  family = gaussian(),
+  data = df
+)
+standata_brms
+```
+
+```{r}
+stancode <- make_stancode(
+  formula = sales ~ temperature,
+  family = gaussian(),
+  data = df
+)
+write_file(stancode, path = "brms_tutorial.stan")
+```
+
+```{r}
+stanplot(simple_lm_brms_3, type = "intervals", pars = "^b_", prob = 0.8, prob_outer = 0.95)
+```
+```{r}
+new_data <- data.frame(temperature = 20)
+fitted(simple_lm_brms_3, newdata = new_data)
+```
+```{r}
+set.seed(1)
+predict(simple_lm_brms_3, new_data)
+```
+
+```{r}
+mcmc_sample <- as.mcmc(simple_lm_brms_3, combine_chains = T)
+print(mcmc_sample, max.print.1 = 1)
+```
+
+```{r}
+mcmc_b_Intercept <- mcmc_sample[, "b_Intercept"]
+mcmc_b_temperature <- mcmc_sample[, "b_temperature"]
+mcmc_sigma <- mcmc_sample[, "sigma"]
+```
+
+```{r}
+rep_fitted <- mcmc_b_Intercept + 20 * mcmc_b_temperature
+list(
+  mean(rep_fitted),
+  quantile(rep_fitted, probs = c(0.025, 0.975))
+)
+```
+
+```{r}
+rep_predict <- c(4000, list(mean = rep_fitted, sd = mcmc_sigma)) %>% do.call(rnorm, .)
+rep_predict
+```
+```{r}
+rep_predict %>% mean
+```
+
+```{r}
+rep_predict %>% quantile(probs = c(0.025, 0.975))
+```
+```{r}
+set.seed(1)
+predict(simple_lm_brms_3, data.frame(temperature = 20))
+```
+
+```{r}
+eff <- marginal_effects(simple_lm_brms_3)
+plot(eff, points = T)
+```
+```{r}
+set.seed(1)
+eff_pre <- marginal_effects(simple_lm_brms_3, method = "predict")
+plot(eff_pre, points = T)
+```
+
+
+

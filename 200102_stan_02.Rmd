@@ -1,0 +1,82 @@
+---
+title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
+subtitle: "01"
+author: "Tomoya Saito"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extensions: -ascii_identifiers
+    self_containd: true
+    lightbox: true
+    toc_float: true
+    toc_depth: 3
+
+---
+
+```{r knitr_init, cache=FALSE, include=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+
+```
+
+data was downloaded from [this website](https://github.com/logics-of-blue/book-r-stan-bayesian-model-intro)
+```{r}
+library(tidyverse)
+library(rstan)
+library(bayesplot)
+path <-  "/Users/tomoya/Documents/dataset/bayesian_intro_baba/3-2-1-beer-sales-2.csv"
+df <- read_csv(path)
+df
+```
+```{r}
+df %>% mosaic::inspect()
+```
+
+```{r}
+temperature_pred <- 11:30
+temperature_pred
+```
+
+```{r}
+data_list_pred <- list(N = nrow(df), sales = df$sales, temperature = df$temperature, N_pred = length(temperature_pred), temperature_pred = temperature_pred)
+
+```
+
+```{r}
+mcmc_result_saled_temp <- stan(file = "beer_temperature.stan", data = data_list_pred, seed = 123, chains = 4,
+                              iter = 2000, warmup = 1000, thin = 1)
+```
+
+```{r}
+mcmc_sales_temp_pred <- extract(mcmc_result_saled_temp, permuted = F)
+```
+
+```{r}
+mcmc_sales_temp_pred %>% dimnames()
+```
+
+```{r}
+mcmc_intervals(mcmc_sales_temp_pred, regex_pars = c("sales_pred."), prob = 0.8, prob_outer = 0.95)
+```
+
+```{r}
+mcmc_intervals(mcmc_sales_temp_pred, pars = c("mu_pred[1]", "sales_pred[1]"), prob = 0.8, prob_outer = 0.95)
+```
+
+```{r}
+mcmc_areas(mcmc_sales_temp_pred, pars = c("sales_pred[1]", "sales_pred[20]"), prob = 0.6, prob_outer = 0.99)
+```
+
+

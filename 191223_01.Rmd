@@ -1,0 +1,356 @@
+---
+title: "AboutAIC"
+author: "tmyst"
+date: "2019/12/23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rstan)
+```
+
+### generalization error, empirical risk, and AIC
+Generalization error: 予測分布$p$として$-E[log(p(x))]$,
+$$-E[\log(p(x))] = \int{q(x)\log(p(x))}dx\\=\int{q(x)\log(q(x))dx + \int{q(x)\log(p(x)/q(x))dx} }$$
+(1)Entropy, (2)Predicted distributionとActual distributionの距離の寄与に分割。ここで、すべてのxで$p(x) = q(x)$であれば第2項は0。
+
+真の分布を仮定してダミーデータ作成
+```{r}
+set.seed(123)
+q     <- 0.36
+data_length <- 300
+true_dist <- c(q, 1-q)
+alpha <- 1
+beta  <- 1
+bern <- rbernoulli(p=q, n =data_length) 
+bern %>% as.integer() %>% data.frame(x = .) %>% rownames_to_column("idx") %>% ggplot(data = ., aes(x = idx, y = x)) + 
+  geom_point() + theme_bw() + theme(
+  axis.line.x = element_blank(),
+  axis.text.x = element_blank(),
+  axis.ticks.x =element_blank()
+)
+```
+#### Generalization Error
+```{r}
+data.frame(x = seq(0, 1, 0.1), p= dbeta(x = seq(0, 1, 0.1), alpha, beta)) %>% ggplot(data =., aes(x = x, y = p)) + geom_line() + theme_bw() + 
+  theme(axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12))
+```
+
+Maximum likelihoodにおいてはbernoulli分布のparameterのestimated valueはmeanであり$p_{m}(X) = \bar{x}^{X}(1-\bar{x})^{(1-\bar{X})}$となる。
+```{r}
+ml_pred_dist <- function(new_x, exp_data){
+  pm <- sum(exp_data)/length(exp_data)
+  pm^(new_x) * (1 - pm)^(1 - new_x)
+}
+ml_pred_dist(c(1,0), bern)
+```
+
+Maximum likelihood estimationの場合のGeneralation loss : Mean expected log likelihoodの符号を逆転
+$$G_{n} = - E_{X}[\log{p^{\ast}(x)}] = -E_{X}[\log{p(x|\theta_{ML}})] = -\int{q(x)\log{p(x|\theta_{ML})}dx}$$
+となる。今回は真の分布がわかっているため、この値は
+```{r}
+expected_log_lik <- function(base_dist, exp_data){
+  pred_dist <- ml_pred_dist(c(1, 0), exp_data)
+  sum( base_dist * log( pred_dist ) )
+}
+mean_log_loss <- function(base_dist, exp_data){
+  -expected_log_lik(base_dist, exp_data)
+}
+gn <- mean_log_loss(true_dist, bern)
+gn
+```
+
+真の分布がわからないときにEmpirical lossからGeneralization lossを求める。
+$$T_{n}=-\frac{1}{n}\sum{\log{p^{\ast}(x_{i})}}$$
+```{r}
+trained_loss <- function(exp_data){
+  - sum(log(ml_pred_dist(new_x = exp_data, exp_data = exp_data))) / length(exp_data)
+}
+tn <- trained_loss(bern)
+tn
+```
+
+$$Bias = G_{n} - T_{n} = - \int{q(x)\log{p(x|\theta_{ML})}dx} + \frac{1}{n}\sum{\log{p^{\ast}(x_{i})}}$$
+one time 
+```{r}
+gn - tn
+```
+100 times
+```{r}
+one_time_bias <- function(true_dist, exp_data){
+  meanLogLoss <- mean_log_loss(true_dist, ml_pred_dist(c(1, 0), exp_data) )
+  trainedLoss <- trained_loss(exp_data)
+  meanLogLoss - trainedLoss
+}
+one_time_bias(true_dist = true_dist, exp_data = bern)
+
+res <- lapply(1:50000, function(i){
+  sim_data <- rbinom(size = 1, n = data_length, prob = q) 
+  c(i, one_time_bias(true_dist = true_dist, exp_data = sim_data))
+}) %>% do.call(rbind, .) %>% data.frame() %>% setNames(nm = c("index", "result"))
+
+res %>% ggplot(data=.) + 
+  geom_histogram(aes(x=result), bins = 25, color = "skyblue4", fill = "skyblue3") + 
+  theme_bw(base_size = 14, base_family = "Times") 
+```
+```{r}
+(res$result %>% mean ) 
+1 / length(bern)
+```
+
+```{r}
+my_aic <- function(exp_data, n_param){
+  trained_loss(exp_data) + (n_param / length(exp_data) )
+}
+data.frame(my_aic = my_aic(bern, 1), tn_plus_bias = tn + 0.0033)
+
+```
+```{r}
+bern_model <- glm(bern ~ 1, family = binomial(link = "logit"))
+(bern_model$aic)/( 2*length(bern) )
+```
+```{r}
+a <- lapply(1:1000, function(i) {
+  c(i, my_aic(rbinom(n = 200, size = 1, prob = q), 1))
+  }) %>% do.call(rbind, .) %>% data.frame() %>% setNames(nm=c("ind", "res"))
+
+b <- lapply(1:1000, function(i){
+  exp_data <-  rbinom(n = 200, size = 1, prob = q)
+  c(i, mean_log_loss(base_dist = true_dist, exp_data ))
+  })%>% do.call(rbind, .) %>% data.frame() %>% setNames(nm=c("ind", "res"))
+
+boxplot(a$res, b$res, names = c("AIC", "Generalization_Loss"), col = c("skyblue3", "darkorange"))
+
+```
+
+```{r}
+data.frame(aic = a$res, gl = b$res) %>% summarise_all(mean)
+```
+### bayesian estimation
+The conjugate prior distribution of bernoulli distribution is beta distribution.
+If the prior distribution is expressed as $\mathrm{Beta}(\alpha, \beta)$, then the posterior will be $\mathrm{Beta}(\alpha + \sum{x_{i}}, \beta + n - \sum{x_{i}})$.
+
+Note: from bayes theorem:
+$$p(\theta|X^{n})p(X^{n}) = p(X^{n}|\theta)\psi(\theta)$$
+$$p(\theta|X^{n}) = \frac{p(X^{n}|\theta)\psi(\theta)}{\int{p(X^{n}|\theta)\psi(\theta)d\theta}} = \frac{q^{\alpha + \sum{x_{i}}-1}(1-q)^{\beta+n-\sum{x_{i}}-1}}{\mathrm{Beta(\alpha + \sum{x_{i}}, \beta + n - \sum{x_{i}})}}$$
+
+If we plot the pior and posterior distributions,
+```{r}
+beta_dist_prior <- data.frame(x = seq(0, 1, 0.01), y = dbeta(x = seq(0, 1, 0.01), shape1 = alpha, shape2 = beta))
+
+alpha_post <- alpha + sum(bern)
+beta_post <- beta + length(bern) - sum(bern)
+
+beta_dist_post <- data.frame(x = seq(0, 1, 0.01), y = dbeta( x= seq(0, 1, 0.01), shape1 = alpha_post, shape2 = beta_post)) 
+
+ggplot() + 
+  geom_line(data = beta_dist_post, aes(x = x, y = y), color = "skyblue3", size = 1) + 
+  geom_line(data = beta_dist_prior, aes(x = x, y = y), color = "darkorange", size = 1) +
+  theme_bw(base_size = 14, base_family = "Monaco")
+```
+
+### Generalization loss:
+Predicted distribution by bayesian estimation:
+$$p^{\ast}(X) = E_{\theta}[p(X|\theta)] = \int{p(\theta|X^{n})p(X|\theta)d\theta}$$
+For beta distribution:
+$$p^{\ast}(X) = E_{\theta}[p(X|\theta)] = \int^{1}_{0}{p(X|\theta)p(\theta|X^{n})d\theta} = {(\frac{\alpha + \sum{x_{i}}}{\alpha + \beta + n})^{X}(\frac{\beta + n - \sum{x_{i}}}{\alpha + \beta + n})^{1-X}}$$
+```{r}
+ba_pred_dist <- function(new_x, exp_data, alpha, beta){
+  new_alpha <- alpha + sum(exp_data)
+  new_beta  <- beta + length(exp_data) - sum(exp_data)
+  new_bernoulli_param <- new_alpha / (new_alpha + new_beta)
+  new_bernoulli_param^(new_x) * (1 - new_bernoulli_param)^(1 - new_x)
+}
+pred_dist_2 <- ba_pred_dist(c(1,0), bern, 1, 1)
+pred_dist_2
+```
+Generalization loss for known dist q:
+$$G_{n} = -E_{X}[\log{p^{\ast}(X)}] = - E_{X}[\log{(E_{\theta}[p(X|\theta)])}] = - \int{ q(X)\log{\left( \int{p(X|\theta)p(\theta|x^n)}d\theta \right) dX}} $$
+In this case, true distribution is $q(x) =0.36^{x}(1-0.36)^{1-x}, \space x\in\{0, 1\}$,
+$$-q\log{ \left( \frac{\alpha + \sum{x_{i}}}{\alpha + \beta + n} \right) }-(1 - q)\log{\left( \frac{\beta + n - \sum{x_{i}}}{\alpha + \beta + n} \right) }$$
+```{r}
+ba_expected_log_lik <- function(base_dist, exp_data, alpha, beta){
+  pred_dist <- ba_pred_dist(c(1, 0), exp_data, alpha, beta)
+  sum(base_dist * log(pred_dist))
+}
+ba_mean_log_loss <- function(base_dist, exp_data, alpha, beta){
+  - ba_expected_log_lik(base_dist, exp_data, alpha, beta)
+}
+gn2 <- ba_mean_log_loss(true_dist, bern, 1, 1)
+gn2
+
+```
+
+trained loss:
+$$T_{n} = - \frac{1}{n}\sum_{i}\log{p^{\ast}(x_{i})} = - \frac{1}{n}\sum_{i}{\log{E_{\theta}[p(x_{i}|\theta)]}}$$
+$$T_{n} = \frac{1}{n}\left\{ \sum{x_{i}}\log{ \left( \frac{\alpha +\sum{x_{i}}}{\alpha + \beta + n} \right)} - (n-\sum{x_{i}})\log{ \left( \frac{\beta +n - \sum{x_{i}}}{\alpha + \beta + n} \right)} \right\}  $$
+```{r}
+ba_trained_loss <- function(exp_data, alpha, beta){
+  - mean(log(ba_pred_dist(exp_data, exp_data, alpha, beta)))
+}
+tn2 <- ba_trained_loss(bern, 1, 1)
+tn2
+```
+
+```{r}
+ba_mean_log_loss(true_dist, exp_data = bern, alpha = 1, beta = 1 ) - 
+  ba_trained_loss(exp_data = bern, alpha = 1, beta = 1)
+```
+
+```{r}
+ba_bias_res <- lapply(1:10000, function(i){
+  new_x <- rbinom(n = data_length, size = 1, prob = q)
+  c(i, ba_mean_log_loss(true_dist, new_x, alpha = 1, beta = 1) - 
+      ba_trained_loss(new_x, alpha = 1, beta = 1))
+}) %>% do.call(rbind, .) %>% data.frame() %>% setNames(nm = c("index", "result"))
+ba_bias_res %>% ggplot()+ geom_histogram(aes(x = result), bins = 16, color = "skyblue4", fill = "skyblue3") + theme_bw(base_size = 14)
+```
+
+Mean bias between generalization loss and trained loss is asymptotically equal to gev (general function variance) divided by n.
+$$V_{n} = \sum_{i}\left\{ E_{\theta}[(\log{p(x_{i}|\theta)})^2] - E_{\theta}[\log{p(x_{i}|\theta)}]^2 \right\}$$
+```{r}
+general_function_var <- function(exp_data, alpha, beta){
+  sum(exp_data)*(psigamma(alpha + sum(exp_data), 1) - psigamma(alpha + beta + length(exp_data), 1)) +
+    (length(exp_data) - sum(exp_data)) * (psigamma(beta + length(exp_data) - sum(exp_data), 1) - psigamma(alpha + beta + length(exp_data), 1))
+}
+general_function_var(bern, 1, 1)/length(bern)
+```
+
+```{r}
+WAIC <- function(exp_data, alpha, beta){
+  ba_trained_loss(exp_data, alpha, beta) + (general_function_var(exp_data, alpha, beta)/length(exp_data))
+}
+waic <- WAIC(bern, 1,1)
+
+ba_df <- data.frame(gn2, tn2, diff = gn2-tn2, waic, n= length(bern)) %>% mutate(delta = 1/n)
+ba_df
+```
+
+```{r}
+library(rstan)
+library(loo)
+stan1 <- stan(file = "191223_01.stan", data = list(X = bern, N=length(bern)), seed = 1, chains = 4, warmup = 1000, iter = 2000 )
+
+model1 <- stan_model("191223_01.stan")
+saveRDS(model1, file = "191223_01.rds")
+loaded_model1 <- readRDS("191223_01.rds")
+```
+
+```{r}
+fit <- sampling(loaded_model1, data = list(X = bern, N = length(bern)), refresh = 0, show_messages = F, seed = 1234)
+```
+
+```{r}
+stan_trace(fit, "q") + theme_bw(base_size = 14)
+```
+```{r}
+stan_hist(fit, "q") + theme_bw(base_size = 14) 
+```
+```{r}
+waic_est <- loo::waic(extract(fit)$log_lik)$estimates
+waic_est
+```
+
+```{r}
+c(waic_est[2, 1], general_function_var(bern, 1, 1))
+```
+
+```{r}
+c(waic_est[3, 1]/(2*length(bern)), WAIC(bern, 1, 1), ba_mean_log_loss(true_dist, bern, 1,1))
+```
+
+```{r}
+stan_waic <- function(exp_data){
+  tempmodel <- readRDS("191223_01.rds")
+  fit <- sampling(tempmodel, data = list(X = exp_data, N = length(exp_data)), 
+                  seed = 1, refresh = 0, show_messages = F)
+  waic_est <- waic(extract(fit)$log_lik)$estimates
+  waic_est[3, 1]/(2*length(exp_data))
+}
+```
+
+```{r}
+stan_waic_res <- lapply(1:100, function(i){
+  c(i, stan_waic(rbinom(n = data_length, size = 1, prob = q)))
+})
+stan_waic_res_df <- stan_waic_res %>% do.call(rbind, .) %>% data.frame() %>% setNames(nm =c("ind", "res"))
+```
+
+```{r}
+waic_dist     <- replicate(1000, WAIC(rbinom(data_length, 1, q), 1, 1))
+gen_loss_dist <- replicate(1000, ba_mean_log_loss(base_dist = true_dist, rbinom(data_length, 1, q), 1, 1))
+boxplot(stan_waic_res_df$res, waic_dist, gen_loss_dist, names = c("stan waic/2n", "waic", "gn"))
+```
+```{r}
+c(mean(stan_waic_res_df$res), mean(waic_dist), mean(gen_loss_dist))
+```
+### BIC, Free- Energy, WBIC
+$p(x^n) = \int{p(X^n|\theta)}\phi(\theta)d\theta$
+$p(x^n) = \frac{B(\alpha + \sum_{i}x_{i}, \space \beta + n + \sum_{i}{x_{i}})}{B(\alpha, \space \beta)}$
+
+```{r}
+marginal_lik <- function(exp_data, alpha, beta){
+  beta(alpha + sum(exp_data), beta + length(exp_data) - sum(exp_data))/beta(alpha, beta)
+}
+marginal_lik(bern, 1, 1)
+```
+#### Free Energy
+$$F_{n} = - \log{p(X^n)} = \log\int{p(X^n|\theta)\phi(\theta)d\theta}$$
+$$E_{X^n}(F_{n})= -n\int{q(x)\log{q(x)}dx} + \int{\log{\frac{q(x^n)}{p(x
+^n)}q(x^n)dx^n}}$$
+
+
+```{r}
+f_energy <- function(exp_data, alpha, beta){
+  -log(marginal_lik(exp_data, alpha = alpha, beta = beta))
+}
+f_energy(bern, 1, 1)
+```
+#### BIC
+Bayesian Information Criterion:
+
+$$\mathrm{BIC} = -\sum_{i}{\log{(p_{i}|\hat\theta_{ML})}} + \frac{d}{2}\log{n} $$
+For this problem:
+$$\mathrm{BIC} = -\sum_{i}{\left[x_{i}\log\bar{x} + (n - x_{i})\log(1-\bar{x}) \right]} + \frac{\log{n}}{2}$$
+```{r}
+max_log_lik <- function(exp_data){
+  sum(log(ml_pred_dist(exp_data, exp_data)))
+}
+BIC <- function(exp_data){
+    - max_log_lik(exp_data) + (1/2)*log(length(exp_data))
+}
+BIC(bern)
+```
+#### WBIC 
+Posterior distribution under condition in which inverse temperature$\beta = 1/\log{n}$
+$$L_{n}(\theta) =  -\frac{1}{n}\sum_{i}\log{p(x_{i}|\theta)}$$
+$$\mathrm{WBIC} = \frac{\int{nL_{n}(\theta){\Pi}_{i}{p(x_{i}|\theta)^\beta\phi(\theta)d\theta}}}{\int{\Pi_{i}{p(x_{i}|\theta)^{\beta}\phi(\theta)d\theta}}}$$
+
+$$WBIC  = n\psi\left( \alpha + \beta + \frac{n}{\log{n}} \right) - \left( n - \sum_{i}x_{i} \right)\psi\left( \beta +\frac{n - \sum_{i}{x_{i}}}{\log{n}} \right) - \left( - \sum_{i}{x_{i}} \right)\phi \left( \alpha + \frac{\sum_{i}{x_{i}}}{\log{n}}\right)$$
+
+under $\frac{d}{dz}\log{\Gamma(z)}$
+
+```{r}
+WBIC <- function(exp_data, alpha, beta){
+  n <- length(exp_data)
+  x <- sum(exp_data)
+  n * digamma( alpha + beta + n/log(n)) - 
+    ( n- x ) * digamma( beta + (n-x)/log(n) ) - 
+    x * digamma( alpha + x/log(n) )
+}
+WBIC(bern, alpha, beta)
+```
+
+```{r}
+bic_dist <- sapply(1:1000, function(i)BIC(rbinom(data_length, 1, q)))
+wbic_dist <- sapply(1:1000, function(i)WBIC(rbinom(data_length, 1, q), alpha = 1, beta = 1))
+free_energy_dist <- sapply(1:1000, function(i)f_energy(rbinom(data_length, 1, q), alpha = 1, beta = 1))
+boxplot(bic_dist, wbic_dist, free_energy_dist, names = c("BIC", "WBIC", "FE"))
+```
+
+```{r}
+c(mean(bic_dist), mean(wbic_dist), mean(free_energy_dist))
+```
+

@@ -1,0 +1,90 @@
+---
+title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
+subtitle: "04"
+author: "Tomoya Saito"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+  highlight: zenburn
+    md_extensions: -ascii_identifiers
+    self_containd: true
+    lightbox: true
+    toc_float: true
+    toc_depth: 3
+
+---
+
+data was downloaded from [this website](https://github.com/logics-of-blue/book-r-stan-bayesian-model-intro)
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(ggfortify)
+library(scico)
+library(RColorBrewer)
+library(wesanderson)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r}
+library(tidyverse)
+library(rstan)
+library(bayesplot)
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+path <-  "/Users/tomoya/Documents/dataset/bayesian_intro_baba/3-2-1-beer-sales-2.csv"
+df <- read_csv(path)
+df
+```
+
+```{r}
+formula_lm <- formula(sales ~ temperature)
+X <- model.matrix(formula_lm, df)
+print(X, max = 10*ncol(X))
+```
+
+```{r}
+data_list_design <- list(N = nrow(df), K = 2, Y = df$sales, X = X)
+```
+
+```{r}
+mcmc_result_design <- stan(file = "beer_temperature_design_matrix.stan", data = data_list_design, seed = 1,
+                           chains = 4, iter = 2000, warmup = 1000, thin = 1)
+```
+
+```{r}
+mcmc_sample <- extract(mcmc_result_design, permuted = F)
+dimnames(mcmc_sample)
+```
+
+```{r}
+color_scheme_set("pink")
+mcmc_dens(mcmc_sample, pars = c("b[1]","b[2]")) + theme_light(base_size = 14) 
+```
+
+```{r}
+color_scheme_set("mix-teal-red")
+mcmc_intervals(mcmc_sample,pars = c("b[1]", "b[2]"), prob = 0.8, prob_outer = 0.95) + theme_light(base_size = 14) 
+```
+
+```{r}
+color_scheme_set("mix-purple-pink")
+mcmc_combo(mcmc_sample, pars = c("b[1]", "b[2]"))
+```
+
+```{r}
+mcmc_areas(mcmc_sample, pars = c("b[1]", "b[2]"), prob = 0.6, prob_outer = 0.99) + theme_light(base_size = 14)
+```
+

@@ -1,0 +1,190 @@
+---
+title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
+subtitle: "01"
+author: "Tomoya Saito"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extensions: -ascii_identifiers
+    self_containd: true
+    lightbox: true
+    toc_float: true
+    toc_depth: 3
+
+---
+      
+```{r knitr_init, cache=FALSE, include=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+                 cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+
+```
+
+data was downloaded from [this website](https://github.com/logics-of-blue/book-r-stan-bayesian-model-intro)
+```{r}
+library(tidyverse)
+library(rstan)
+library(bayesplot)
+path <-  "/Users/tomoya/Documents/dataset/bayesian_intro_baba/2-4-1-beer-sales-1.csv"
+df <- read_csv(path)
+df
+```
+```{r}
+mcmc_result <- stan(file = "var-mean.stan", data = list(sales = df$sales, N = nrow(df)), seed = 1, chains = 4,
+                     iter = 2000, warmup = 1000, thin = 1)
+```
+
+```{r}
+mcmc_sample <- rstan::extract(mcmc_result, permuted = FALSE)
+mcmc_sample
+```
+
+```{r}
+mcmc_sample[1, "chain:3", "mu"]
+```
+```{r}
+mcmc_sample[, "chain:1", "mu"]
+```
+```{r}
+mcmc_sample[, , "mu"]
+```
+
+```{r}
+mu_mcmc_vec <- as.vector(mcmc_sample[,,"mu"])
+mu_mcmc_vec
+```
+
+```{r}
+mean(mu_mcmc_vec)
+```
+
+```{r}
+quantile(mu_mcmc_vec, probs = c(0.025, 0.975))
+```
+```{r}
+print(mcmc_result, probs = c(0.025, 0.50, 0.975))
+```
+
+```{r}
+library(ggfortify)
+autoplot(ts(mcmc_sample[,,"mu"]), facets = F, ylab = "mu", main = "trace plot") + theme_bw(base_size = 14)
+```
+
+```{r}
+ts(mcmc_sample[,,"mu"])
+```
+
+```{r}
+ggplot(data=mcmc_sample[,,"mu"] %>% as.vector %>% data.frame(sample = .)) + 
+  geom_density(aes(x= sample), fill = "skyblue3", color = "skyblue4", alpha = 0.6) +
+  theme_bw(base_size = 14)
+```
+```{r}
+mcmc_hist(mcmc_sample, pars = c("mu", "sigma"))
+```
+
+```{r}
+mcmc_dens(mcmc_sample, pars = c("mu", "sigma"))
+```
+
+```{r}
+mcmc_trace(mcmc_sample, pars = c("mu", "sigma"))
+```
+
+```{r}
+mcmc_combo(mcmc_sample, pars = c("mu", "sigma"))
+```
+
+```{r}
+mcmc_intervals(mcmc_sample, pars = c("mu", "sigma"), prob = 0.8, prob_outer = 0.95)
+```
+
+```{r}
+mcmc_areas(mcmc_sample, pars = c("mu", "sigma"), prob = 0.8, prob_outer = 0.95)
+```
+
+```{r}
+mcmc_acf_bar(mcmc_sample, pars = c("mu", "sigma"))
+```
+
+```{r}
+animal_num <- read_csv("/Users/tomoya/Documents/dataset/bayesian_intro_baba/2-5-1-animal-num.csv")
+animal_num %>% table
+```
+
+```{r}
+mcmc_normal <- stan(file = "animal_normal_dist.stan", data = list(animal_num = animal_num$animal_num, N = nrow(animal_num)), 
+                    seed = 1, chains = 4, iter = 2000, warmup = 1000, thin = 1)
+mcmc_poisson <- stan(file = "animal_poisson_dist.stan", data = list(animal_num = animal_num$animal_num, N = nrow(animal_num)), 
+                     seed = 1, chains = 4, iter = 2000, warmup = 1000, thin = 1)
+```
++ prediction
+```{r}
+y_rep_normal <- extract(mcmc_normal)$pred
+y_rep_poisson <- extract(mcmc_poisson)$pred
+```
+
+```{r}
+dim(y_rep_normal)
+```
+
+```{r}
+y_rep_normal[1,]
+```
+```{r}
+y_rep_poisson[1,]
+```
+```{r}
+ppc_hist( y = animal_num$animal_num, yrep = y_rep_normal[1:5, ])
+```
+
+```{r}
+path <- "/Users/tomoya/Documents/dataset/bayesian_intro_baba/2-6-1-beer-sales-ab.csv"
+sales_ab <- read_csv(path)
+```
+
+```{r}
+ggplot(data = sales_ab, aes(x = sales, y = ..density.., color = beer_name, fill = beer_name)) + 
+  geom_histogram(alpha = 0.5, position = "identity") +
+  geom_density(alpha = 0.5, size = 0) + theme_bw(base_size = 14)
+```
+
+```{r}
+inspect <- sales_ab %>% mosaic::inspect()
+inspect$categorical
+```
+
+```{r}
+inspect$quantitative
+```
+
+```{r}
+data_list_ab <- list(
+  sales_a = sales_ab %>% filter(beer_name == "A") %>% select(sales) %>% `[[`(1), 
+  sales_b = sales_ab %>% filter(beer_name == "B") %>% select(sales) %>% `[[`(1),
+  N = 100
+  )
+```
+
+```{r}
+mcmc_result_sales_ab <- stan(file = "sales_ab_normal.stan", data = data_list_ab, 
+                             seed = 1, chains = 4, iter = 2000, warmup = 1000, thin = 1)
+```
+
+```{r}
+mcmc_sample <- extract(mcmc_result_sales_ab, permuted = F)
+mcmc_dens(mcmc_sample, pars = "diff") + theme_bw(base_size = 14) 
+```
+
+
