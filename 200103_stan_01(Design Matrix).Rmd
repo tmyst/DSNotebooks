@@ -1,7 +1,7 @@
 ---
 title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
 subtitle: "04"
-author: "Tomoya Saito"
+author: "tmyst"
 date: "`r Sys.Date()`"
 output:
   rmdformats::readthedown:
