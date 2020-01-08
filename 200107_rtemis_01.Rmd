@@ -1,0 +1,63 @@
+---
+title: "Test rtemis"
+subtitle: "01"
+author: "tmyst"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+  highlight: zenburn
+  md_extensions: -ascii_identifiers
+  self_containd: true
+  lightbox: true
+  toc_float: true
+  toc_depth: 3
+
+---
+  
+[Reference](https://rtemis.netlify.com/setup.html)
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(ggfortify)
+library(scico)
+library(RColorBrewer)
+library(wesanderson)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r}
+# install.packages("remotes")
+# remotes::install_github("egenn/rtemis")
+```
+```{r}
+# packages <- c("e1071", "gbm", "glmnet", "pbapply", "plyr", "ranger", "rpart")
+# install.packages(packages)
+```
+
+```{r}
+library(sparklyr)
+# sparklyr::spark_install()
+```
+
+```{r}
+# devtools::install_github("rstudio/keras")
+library(keras)
+# install_keras()
+```
+
+```{r}
+library(rtemis)
+```
+

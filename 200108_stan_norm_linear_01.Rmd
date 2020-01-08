@@ -1,0 +1,116 @@
+---
+title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
+subtitle: "07"
+author: "tmyst"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+  highlight: zenburn
+  md_extensions: -ascii_identifiers
+  self_containd: true
+  lightbox: true
+  toc_float: true
+  toc_depth: 3
+
+---
+  
+data was downloaded from [this website](https://github.com/logics-of-blue/book-r-stan-bayesian-model-intro)
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(ggfortify)
+library(scico)
+library(RColorBrewer)
+library(wesanderson)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r}
+library(tidyverse)
+library(rstan)
+library(brms)
+rstan::option(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+```
+
+```{r}
+df <- read_csv("/Users/tomoya/Documents/dataset/bayesian_intro_baba/3-7-1-beer-sales-4.csv")
+df
+```
+
+```{r}
+df %>% skimr::skim()
+```
+
+```{r}
+ggplot(data = df) + 
+  geom_point(mapping = aes(x=temperature, y = sales, color = weather, shape = weather, fill = weather), size = 2.5, alpha = 0.6) +
+  theme_bw(base_size = 14)+  
+  scale_color_aaas() + 
+  theme(
+    legend.text = element_text(size = 12),
+    legend.background = element_rect(colour = "gray50")
+    )
+```
+
+```{r}
+fm <- bf(sales ~ temperature + weather)
+lm_brms <- brm(formula = fm, data = df,family = gaussian(), seed = 1,
+               prior = c(set_prior("", class = "Intercept"), set_prior("", class = "sigma")))
+```
+
+```{r}
+lm_brms
+```
+
+```{r}
+eff <- marginal_effects(lm_brms, effects = "temperature:weather")
+plot(eff, points = T)[[1]] + theme_bw(base_size = 14) + scale_color_aaas() + scale_fill_aaas()
+```
+
+```{r}
+formula_lm <- formula(sales ~ temperature + weather)
+design_mat <- model.matrix(formula_lm, data = df)
+desi
+```
+
+```{r}
+data_list <- list(N = nrow(df), K = ncol(design_mat), X = design_mat, Y = df$sales)
+normal_linear_stan <- stan(
+  file = "sales_weather_design_matrix.stan",
+  data = data_list,
+  seed = 1,warmup = 1000,iter = 2000, chains = 4, thin = 1
+)
+```
+
+```{r}
+print(normal_linear_stan)
+```
+
+
+```{r}
+stan_result <- rstan::extract(normal_linear_stan, permuted = F)
+stan_result %>% dimnames
+bayesplot::mcmc_intervals(stan_result, pars = c("b[1]", "b[2]", "b[3]", "b[4]"))
+```
+
+```{r}
+bayesplot::mcmc_areas(stan_result, pars = c("b[1]", "b[2]", "b[3]", "b[4]"))
+```
+
+
+
+
