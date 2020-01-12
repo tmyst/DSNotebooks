@@ -165,11 +165,11 @@ data.frame(temperature = temperature_unique, df_qts_pred_lambda, check.names = F
 ```
 
 ```{r}
-(df$temperature %*% t(mcmc_temperature))[1, ] %>% data.frame(x = .) %>% 
+list(
+  (df$temperature %*% t(mcmc_temperature))[1, ] %>% data.frame(x = .) %>% 
+  ggplot() + geom_density(aes(x=x), fill = "skyblue3", color = "gray", alpha = 0.5) + theme_bw(), 
+  (df$temperature %*% t(mcmc_temperature))[1, ] %>% data.frame(x = .) %>% 
   ggplot() + geom_density(aes(x=x), fill = "skyblue3", color = "gray", alpha = 0.5) + theme_bw() 
-
-(df$temperature %*% t(mcmc_temperature))[1, ] %>% data.frame(x = .) %>% 
-  ggplot() + geom_density(aes(x=x), fill = "skyblue3", color = "gray", alpha = 0.5) + theme_bw() 
-
+)
 ```
 
