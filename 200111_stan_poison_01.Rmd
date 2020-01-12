@@ -1,0 +1,175 @@
+---
+title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
+subtitle: "08"
+author: "tmyst"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+  highlight: zenburn
+  md_extensions: -ascii_identifiers
+  self_containd: true
+  lightbox: true
+  toc_float: true
+  toc_depth: 3
+---
+  
+data was downloaded from [this website](https://github.com/logics-of-blue/book-r-stan-bayesian-model-intro)
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(ggfortify)
+library(scico)
+library(RColorBrewer)
+library(wesanderson)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r}
+library(tidyverse)
+library(rstan)
+library(brms)
+rstan_options(auto_write = T)
+options(mc.cores = parallel::detectCores())
+
+```
+
+```{r}
+df <- read_csv("/Users/tomoya/Documents/dataset/bayesian_intro_baba/3-8-1-fish-num-1.csv")
+df
+```
+```{r}
+contents <- mosaic::inspect(df)
+contents[[1]]
+```
+
+```{r}
+contents[[2]]
+```
+
+```{r}
+library(viridis)
+library(hrbrthemes)
+df %>% ggplot() + geom_histogram(aes(x=fish_num)) + theme_ipsum() + 
+  theme(axis.title.x = element_text(size = 11), 
+        axis.title.y = element_text(size = 11))
+```
+
+```{r}
+library(ggsci)
+library()
+df %>% ggplot() + geom_point(aes(x = temperature, y = fish_num, color = weather, shape = weather), size = 2.5) +
+  scale_color_manual(values = c("#69b3a2", "#404080")) + theme_ipsum(base_size = 12) + 
+  theme(axis.title.x = element_text(size = 12), 
+        axis.title.y = element_text(size = 12), 
+        legend.text = element_text(size = 12), 
+        legend.title = element_text(size = 13)) 
+```
+
+```{r}
+glm_pois_brms <- brm(
+  formula = fish_num ~ weather + temperature,
+  family = poisson(),
+  data = df,
+  seed = 1,
+  prior = c(set_prior("", class = "Intercept"))
+)
+```
+
+```{r}
+glm_pois_brms
+```
+```{r}
+as.mcmc(glm_pois_brms, combine_chains = T) %>% bayesplot::mcmc_intervals(pars = c("b_Intercept"), prob = 0.8, prob_outer = 0.95) + theme_bw(base_size = 14) 
+```
+```{r}
+eff <- marginal_effects(glm_pois_brms, effects = "temperature:weather")
+plot(eff, points = T)[[1]] + 
+  theme_ipsum(base_size = 13) + 
+  scale_color_aaas() +
+  scale_fill_aaas() + 
+  theme(axis.title.x = element_text(size = 13), 
+        axis.title.y = element_text(size = 13), 
+        legend.title = element_text(size = 13), 
+        legend.text = element_text(size = 12), 
+        legend.position = c(0.04, 0.96), legend.justification = c(0, 1),
+        legend.background = element_rect(color = "gray70"))
+```
+
+```{r}
+mcmc_glm_pois <- as.mcmc(glm_pois_brms, combine_chains = T)
+mcmc_temperature <- mcmc_glm_pois[, "b_temperature"]
+mcmc_weathersunny <- mcmc_glm_pois[, "b_weathersunny"]
+mcmc_Intercept   <- mcmc_glm_pois[, "b_Intercept"]
+n_coeffs <- length(dimnames(mcmc_glm_pois)[[2]])-1
+plotlist_mcmc_area <- lapply(1:n_coeffs, function(i){
+  mcmc_glm_pois %>% bayesplot::mcmc_areas( pars = dimnames(mcmc_glm_pois)[[2]][i]) + theme_bw(base_size = 14)
+})
+plotlist_mcmc_area
+```
+
+Reploduce marginal-effect graph directly using mcmc samples
+```{r}
+fm  <- formula(fish_num ~ weather + temperature)
+mat <- model.matrix(fm, df)
+
+## factors and numerics in original data
+weathersunny_unique <- mat[, "weathersunny"] %>% unique # used in strata
+temperature_unique  <- mat[, "temperature"] %>% unique %>% unique # x axis variable
+
+## reproduce predected values using real explanatory variables
+dup_mcmc    <- function(mcmc, n) { apply(matrix(mcmc, nrow = 1), MARGIN = 2, FUN = function(x)rep(x, n)) }
+rep_lambda  <- dup_mcmc(mcmc_Intercept, 100) + df$temperature %*% t(mcmc_temperature) + mat[, "weathersunny"] %*% t(mcmc_weathersunny)
+
+## predict values using simulated variables
+pred_lambdas <- lapply(weathersunny_unique, function(x){
+  dup_mcmc(mcmc_Intercept, length(temperature_unique)) + 
+    temperature_unique  %*% t(mcmc_temperature) + 
+    rep(x, length(temperature_unique)) %*% t(mcmc_weathersunny)
+})
+
+qts_pred_lambda  <- lapply(pred_lambdas, function(X){
+  mx <- apply(X, MARGIN = 1, FUN = function(x) c( mean(x), quantile(x, probs = c(0.025, 0.1, 0.5, 0.9, 0.975)))) %>% t
+  colnames(mx) <- c("mean", "p2.5", "p10", "p50", "p90", "p97.5")
+  mx
+  }) %>% setNames(nm = c("cloudy", "sunny"))
+
+df_qts_pred_lambda <- lapply(names(qts_pred_lambda), function(name){ 
+  qts_pred_lambda[[name]] %>% 
+    data.frame(check.names = F) %>%  
+    add_column(weather = name, .before = T) 
+  }) %>% 
+  bind_rows()
+
+data.frame(temperature = temperature_unique, df_qts_pred_lambda, check.names = F) %>% 
+  ggplot() + 
+  geom_line(aes(x = temperature, y = exp(mean), color = weather)) +
+  geom_ribbon(aes(x = temperature, ymin = exp(p2.5), ymax = exp(p97.5), fill = weather), alpha = 0.4) +
+  theme_bw(base_size = 14, base_rect_size = 0, base_line_size = 1) +  
+  scale_fill_nejm() + 
+  scale_color_nejm() +
+  geom_point(data = df, mapping = aes(x = temperature, y = fish_num, color = weather, shape = weather), size = 2) +
+  ylab("fish_num")
+
+```
+
+```{r}
+(df$temperature %*% t(mcmc_temperature))[1, ] %>% data.frame(x = .) %>% 
+  ggplot() + geom_density(aes(x=x), fill = "skyblue3", color = "gray", alpha = 0.5) + theme_bw() 
+
+(df$temperature %*% t(mcmc_temperature))[1, ] %>% data.frame(x = .) %>% 
+  ggplot() + geom_density(aes(x=x), fill = "skyblue3", color = "gray", alpha = 0.5) + theme_bw() 
+
+```
+
