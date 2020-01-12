@@ -1,0 +1,215 @@
+---
+title: "Test Modern Packages"
+subtitle: "01"
+author: "tmyst"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+  highlight: zenburn
+  md_extensions: -ascii_identifiers
+  self_containd: true
+  lightbox: true
+  toc_float: true
+  toc_depth: 3
+
+---
+
+[Reference](https://www.business-science.io/code-tools/2019/11/18/parsnip-churn-classification-machine-learning.html)
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(ggfortify)
+library(scico)
+library(RColorBrewer)
+library(wesanderson)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r}
+# library(parsnip)
+# library(rsample)
+# library(recipes)
+# library(yardstick)
+library(tidyverse)
+library(tidymodels)
+library(skimr)
+library(ranger)
+```
+
+```{r}
+telco <- read_csv("https://raw.githubusercontent.com/DiegoUsaiUK/Classification_Churn_with_Parsnip/master/00_Data/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+```
+
+```{r}
+telco %>% head %>% kable
+```
+
+```{r}
+telco %>% skim()
+```
+
++ Another way of skimming data
+```{r}
+(telco %>% mosaic::inspect())[[1]]
+```
+
+```{r}
+(telco %>% mosaic::inspect())[[2]]
+```
+
+```{r}
+df <- telco %>%
+    select(-customerID) %>%
+    drop_na()
+```
+
+```{r}
+set.seed(1983) 
+train_test_split <- rsample::initial_split(data = df, prop = 0.8) 
+train_test_split
+```
+
+```{r}
+train_tbl <- train_test_split %>% training() 
+test_tbl  <- train_test_split %>% testing() 
+```
+
+```{r}
+recipe_simple <- function(dataset){
+    recipe(Churn ~ ., data = dataset) %>%
+        step_string2factor(all_nominal(), -all_outcomes()) %>%
+        prep(data = dataset)
+}
+
+recipe_prepped <- recipe_simple(dataset = train_tbl)
+train_baked <- bake(recipe_prepped, new_data = train_tbl)
+test_baked  <- bake(recipe_prepped, new_data = test_tbl)
+```
+
+```{r}
+logistic_glm <- logistic_reg(mode = "classification") %>%
+    set_engine("glm") %>%
+    fit(Churn ~ ., data = train_baked)
+logistic_glm
+```
+
+```{r}
+predictions_glm <- logistic_glm %>%
+    predict(new_data = test_baked) %>%
+    bind_cols(test_baked %>% select(Churn))
+```
+
+```{r}
+predictions_glm %>% head() %>% kable()
+```
+
+```{r}
+predictions_glm %>%
+    conf_mat(Churn, .pred_class) %>%
+    pluck(1) %>%
+    as_tibble() %>%
+    
+# Visualize with ggplot
+ggplot(aes(Prediction, Truth, alpha = n)) +
+  geom_tile(show.legend = F) +
+  geom_text(aes(label = n), colour = "white", alpha = 0.8, size = 10) +
+  theme_bw(base_size = 14)
+```
+
+```{r}
+predictions_glm %>%
+    metrics(Churn, .pred_class) %>%
+    select(-.estimator) %>%
+    filter(.metric == "accuracy") %>%
+    kable()
+```
+
+```{r}
+tibble(
+    "precision" = precision(predictions_glm, Churn, .pred_class) %>% select(.estimate),
+    "recall" = recall(predictions_glm, Churn, .pred_class) %>% select(.estimate)
+    ) %>% 
+  unnest(cols = c(precision, recall)) %>% 
+  kable()
+```
+
+```{r}
+predictions_glm %>%
+    f_meas(Churn, .pred_class) %>%
+    select(-.estimator) %>%
+    kable()
+```
+
+```{r}
+cross_val_tbl <- vfold_cv(train_tbl, v = 10)
+cross_val_tbl
+```
+
+```{r}
+cross_val_tbl %>% pluck("splits", 1)
+```
+```{r}
+rf_fun <- function(split, id, try, tree) {
+    
+    analysis_set <- split %>% analysis()
+    analysis_prepped <- analysis_set %>% recipe_simple()
+    analysis_baked <- analysis_prepped %>% bake(new_data = analysis_set)
+    
+    model_rf <-
+        rand_forest(
+            mode = "classification",
+            mtry = try,
+            trees = tree
+        ) %>%
+        set_engine("ranger",
+                   importance = "impurity"
+        ) %>%
+        fit(Churn ~ ., data = analysis_baked)
+    
+    assessment_set     <- split %>% assessment()
+    assessment_prepped <- assessment_set %>% recipe_simple()
+    assessment_baked   <- assessment_prepped %>% bake(new_data = assessment_set)
+    
+    tibble(
+        "id" = id,
+        "truth" = assessment_baked$Churn,
+        "prediction" = model_rf %>%
+            predict(new_data = assessment_baked) %>%
+            unlist()
+    )
+    
+}
+
+```
+
+```{r}
+pred_rf <- map2_df(
+    .x = cross_val_tbl$splits,
+    .y = cross_val_tbl$id,
+    ~ rf_fun(split = .x, id = .y, try = 3, tree = 200)
+)
+
+head(pred_rf)
+```
+
+```{r}
+pred_rf %>%
+    conf_mat(truth, prediction) %>%
+    summary() %>%
+    select(-.estimator) %>%
+    filter(.metric %in% c("accuracy", "precision", "recall", "f_meas")) %>%
+    kable()
+```
+
