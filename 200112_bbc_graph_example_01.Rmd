@@ -62,7 +62,7 @@ p <- df %>% ggplot(aes(y = country, x = age, color = gender)) +
   labs(x = "", y = "") +
   scale_x_continuous( breaks=c(65, 70, 75, 80), labels=c("65 years", "70", "75", "80 years")) +
   scale_color_npg() +
-  guides(color = FALSE) + # Use a larger dot
+  guides(color = FALSE) +
   theme_ipsum() +
   theme(panel.grid.major.x = element_blank(),
         panel.grid.minor.x = element_blank()) 
@@ -90,7 +90,7 @@ p2 <- dfg %>%
   scale_x_continuous( breaks=c(65, 70, 75, 80), labels=c("65 years", "70", "75", "80 years")) +
   scale_color_lancet() +
   scale_y_discrete(limits = rev(levels(dfg$country))) +
-  guides(color = FALSE) + # Use a larger dot
+  guides(color = FALSE) + 
   theme_ipsum() +
   theme(panel.grid.major.x = element_blank(),
         panel.grid.minor.x = element_blank()) +
