@@ -1,0 +1,104 @@
+---
+title: "bbc_graph_example"
+subtitle: "01"
+author: "tmyst" 
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extension: -ascii_identifiers
+    self_contained: true
+    lightobx: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(tidyverse)
+library(hrbrthemes)
+
+#library(ggfortify)
+#library(furrr)
+#library(wesanderson)
+#library(RColorBrewer)
+#library(ggthemes)
+#library(scico)
+
+#devtools::install_github("bbc/bbplot")
+#library(bbplot)
+#devtools::install_github("cttobin/ggthemr")
+#library(ggthemr)
+
+options(max.print="100")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+#### Data (artificial)
++ [Found in a comment wrote in an article in "Revolutions"](https://blog.revolutionanalytics.com/2018/06/ft-bbc-uses-r.html)
+```{r}
+# bbc_graph_example2 Russia Female 76.0
+countries <- c("Russia", "Lithuania", "Belarus", "Syria", "Ukraine", "Latvia", "Georgia", "Cape Verde", "Mongolia", "Kazakhstan")
+genders   <- c("Male", "Female")
+ages      <- c(65.0, 76.0, 70.0, 81.0, 68.0, 79.0, 62.0, 72.0, 67.0, 77.0, 70.0, 80.0, 69.0, 79.0, 68.0, 78.0, 63.0, 72.0, 67.0, 76.0)
+df        <- expand.grid(gender = genders, country = countries) %>% mutate(age = ages)
+```
+
+#### Simple Style
+```{r}
+p <- df %>% ggplot(aes(y = country, x = age, color = gender)) +
+  geom_line(aes(group = country), size = 1.5, color = "grey") +
+  geom_point(size = 3) +
+  labs(x = "", y = "") +
+  scale_x_continuous( breaks=c(65, 70, 75, 80), labels=c("65 years", "70", "75", "80 years")) +
+  scale_color_npg() +
+  guides(color = FALSE) + # Use a larger dot
+  theme_ipsum() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank()) 
+p
+```
+
+#### Text added
+```{r}
+dfg <- df %>% 
+  group_by(country) %>% 
+  mutate(diff_age = abs(lead(age)-age), med_age = median(age)) %>% 
+  ungroup %>% 
+  mutate(suffix = ifelse(country %in% c(.$country[1] %>% as.character, .$country[nrow(.)] %>% as.character) & 
+                           gender == "Male", " Years", "")) %>% 
+  mutate(diff_label = str_c(diff_age, suffix))
+
+UBM <- df %>% filter(country %in% c(.$country[1] %>% as.character, .$country[nrow(.)] %>% as.character)) %>% filter(gender %in% c("Male"))
+UBF <- df %>% filter(country %in% c(.$country[1] %>% as.character, .$country[nrow(.)] %>% as.character)) %>% filter(gender %in% c("Female"))
+
+p2 <- dfg %>% 
+  ggplot(aes(y = country, x = age, color = gender)) +
+  geom_line(aes(group = country), size = 1.5, color = "grey") +
+  geom_point(size = 3) +
+  labs(x = "", y = "") +
+  scale_x_continuous( breaks=c(65, 70, 75, 80), labels=c("65 years", "70", "75", "80 years")) +
+  scale_color_lancet() +
+  scale_y_discrete(limits = rev(levels(dfg$country))) +
+  guides(color = FALSE) + # Use a larger dot
+  theme_ipsum() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank()) +
+  geom_text(data=UBM, aes(age, country, label=factor(gender), hjust =  1.2, vjust = 0.3)) +
+  geom_text(data=UBF, aes(age, country, label=factor(gender), hjust = -0.2, vjust = 0.3)) + 
+  geom_text(data=UBF, aes(age, country, label=factor(gender), hjust = -0.2, vjust = 0.3)) +
+  geom_text(aes(x = med_age, y = country, label = diff_label), color = "gray30", size = 4, vjust = -.5) 
+
+p2
+```
+
