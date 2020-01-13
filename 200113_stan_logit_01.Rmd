@@ -1,0 +1,206 @@
+---
+title: "Bayesian statistical modeling by Stan&R introduction (the book by baba)"
+subtitle: "09"
+author: "tmyst"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extensions: -ascii_identifiers
+    self_containd: true
+    lightbox: true
+    toc_float: true
+    toc_depth: 3
+---
+  
+data was downloaded from [this website](https://github.com/logics-of-blue/book-r-stan-bayesian-model-intro)
+```{r knitr_init, cache=FALSE, include=FALSE}
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(ggfortify)
+library(scico)
+library(RColorBrewer)
+library(wesanderson)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+```{r}
+library(tidyverse)
+library(rstan)
+library(brms)
+rstan_options(auto_write = T)
+options(mc.cores = parallel::detectCores())
+
+```
+
+```{r}
+df <- read_csv("/Users/tomoya/Documents/dataset/bayesian_intro_baba/3-9-1-germination.csv")
+df
+```
+
+```{r}
+mosaic::inspect(df)[[1]]
+```
+
+```{r}
+mosaic::inspect(df)[[2]]
+```
+
+```{r}
+df %>% ggplot() + 
+  geom_point(aes(x = nutrition, y = germination, color = solar, shape = solar), size = 3) + 
+  theme_bw(base_size = 14, base_rect_size = 0, base_line_size = 1) +
+  scale_color_manual(values = c("#69B3A2", "#404080")) 
+```
+
+```{r}
+brm_binom <- brm(
+  germination | trials(size) ~ solar + nutrition, 
+  family = binomial(),
+  data = df,
+  seed = 1,chains = 4,iter = 2000, warmup = 1000, thin = 1,
+  prior = c(set_prior("", class = "Intercept"))
+)
+```
+
+```{r}
+brm_binom
+```
+
++ $\beta_{0} + \beta x$
+```{r}
+pred_mat <- expand.grid(
+  solar     = df$solar %>% unique, 
+  nutrition = seq(1, 10, 1), 
+  size      = 10
+  )
+
+fit_z <- fitted(brm_binom, newdata = pred_mat, scale = "linear") 
+fit_z
+```
+
+```{r}
+fit_p <- 1/(1 + exp(-fit_z))
+fit_p
+```
+
+```{r}
+fit_odds <- fit_p/(1-fit_p)
+fit_odds
+```
+
++ Coefficients
+```{r}
+est_coef <- fixef(brm_binom)[,"Estimate"]
+est_coef
+```
+
+```{r}
+df_odds <- cbind(pred_mat, fit_odds)
+```
+
+#### Odds ratio
+```{r}
+df_odds <- df_odds %>% 
+  group_by(nutrition) %>% mutate(odds_change_solar = Estimate/lag(Estimate)) %>% ungroup %>% 
+  group_by(solar) %>% arrange(solar, nutrition) %>% mutate(odds_change_nutrition = Estimate/lag(Estimate)) %>% ungroup
+```
+
++ Odds ratio 1
+```{r}
+df_odds %>% select(odds_change_nutrition) %>% table
+```
++ Odds ratio 2
+```{r}
+df_odds %>% select(odds_change_solar) %>% table
+```
+
+```{r}
+eff_logit <- marginal_effects(brm_binom, effects = "nutrition:solar")
+plot(eff_logit)[[1]] + theme_bw(base_size = 14) + scale_fill_aaas() + scale_color_aaas()
+```
+```{r}
+mcmc_logit <- as.mcmc(brm_binom, combine_chains = T)
+mcmc_logit
+```
+
+```{r}
+pnames <- dimnames(mcmc_logit)[["parameters"]]
+pnames <- pnames[1:length(pnames)-1]
+
+pred_df <- expand.grid(solar = df$solar %>% unique, 
+                       nutrition = seq(min(df$nutrition), max(df$nutrition), 0.2)) %>% 
+  mutate(size = 10) %>% 
+  mutate(solarsunshine = ifelse(solar == "sunshine", 1, 0))
+
+beta_mat <- matrix(c(mcmc_logit[, pnames[1]], mcmc_logit[, pnames[2]], mcmc_logit[, pnames[3]]), ncol = 3)
+beta_mat
+```
+
+```{r}
+pred_mat  <- pred_df %>% mutate(Intercept =1) %>% select("Intercept", "solarsunshine", "nutrition") %>% as.matrix
+
+mcmc_bx <- pred_mat %*% t(beta_mat) 
+
+make_bx_summary <- function(bx){
+  pred_zs <- lapply(1:nrow(bx), function(i){
+    matrow <- bx[i, ]
+    c(mean(matrow), quantile(matrow, probs = c(0.005, 0.025, 0.1, 0.5, 0.9, 0.975, 0.995))) %>% 
+      setNames(nm = c("mean", "p0.5", "p2.5", "p10", "p50", "p90", "p97.5", "p99.5"))
+  }) %>% do.call(bind_rows, .)
+  pred_zs
+}
+
+bayes_zs <- make_bx_summary(mcmc_bx)
+bayes_probs <- 1/(1 + exp(-bayes_zs))
+bayes_nums  <- 10 * bayes_probs
+
+pred_mcmc_df <- bind_cols(pred_df, bayes_nums)
+
+pred_mcmc_df %>% ggplot() + 
+  geom_line(aes(x = nutrition, y = mean, color = solar), size = 1) +
+  geom_ribbon(aes(x = nutrition, ymin = p2.5, ymax = p97.5, fill = solar), alpha = 0.5) +
+  geom_point(data = df, aes(x = nutrition, y = germination, color = solar, shape = solar), size = 2) + 
+  scale_color_lancet() + scale_fill_lancet() +
+  theme_light(base_size = 14, base_line_size = 1.5, base_rect_size = 0.5) + 
+  theme(legend.position = c(0.01, 0.98), legend.justification = c(0, 1),
+        legend.background = element_rect(size = 1, color = "gray70")) 
+
+```
+```{r}
+make_pred <- function(bx, base_size, n_generation){
+  pred_zs <- lapply(1:nrow(bx), function(i){
+  matrow <- bx[i, ]
+  pred_probs <- 1/(1 + exp(- matrow))
+  pred_nums <- sapply(pred_probs, function(p){
+    rbinom(size = base_size, n = n_generation, prob = p)
+    }) %>% as.vector
+  
+  c(mean(pred_nums), quantile(pred_nums, probs = c(0.005, 0.025, 0.1, 0.5, 0.9, 0.975, 0.995))) %>% 
+      setNames(nm = c("mean", "p0.5", "p2.5", "p10", "p50", "p90", "p97.5", "p99.5"))
+  }) %>% do.call(bind_rows, .)
+}
+
+pred_result <- make_pred(mcmc_bx, base_size = 10, n_generation = 10)
+bind_cols(pred_df, pred_result) %>% ggplot() + 
+  geom_line(aes(x = nutrition, y = p50, color = solar), size = 1) +
+  geom_ribbon(aes(x = nutrition, ymin = p0.5, ymax = p99.5, fill = solar), alpha = 0.5) +
+  geom_point(data = df, aes(x = nutrition, y = germination, color = solar, shape = solar), size = 2) +
+  theme_light(base_size = 14, base_line_size = 1.5, base_rect_size = 0.5) +
+  scale_color_lancet() + scale_fill_lancet() +
+  theme(legend.position = c(0.01, 0.99), legend.justification = c(0, 1),
+        legend.background = element_rect(color = "gray70", size = 1))
+```
+
