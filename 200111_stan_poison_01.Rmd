@@ -130,7 +130,6 @@ temperature_unique  <- mat[, "temperature"] %>% unique %>% unique # x axis varia
 
 ## reproduce predected values using real explanatory variables
 dup_mcmc    <- function(mcmc, n) { apply(matrix(mcmc, nrow = 1), MARGIN = 2, FUN = function(x)rep(x, n)) }
-rep_lambda  <- dup_mcmc(mcmc_Intercept, 100) + df$temperature %*% t(mcmc_temperature) + mat[, "weathersunny"] %*% t(mcmc_weathersunny)
 
 ## predict values using simulated variables
 pred_lambdas <- lapply(weathersunny_unique, function(x){
@@ -172,4 +171,59 @@ list(
   ggplot() + geom_density(aes(x=x), fill = "skyblue3", color = "gray", alpha = 0.5) + theme_bw() 
 )
 ```
+```{r}
+eff_pre <- marginal_effects(glm_pois_brms, method = "predict", effects = "temperature:weather", probs = c(0.005, 0.995))
+plot(eff_pre, points = T)[[1]] +  
+  theme_ipsum(base_size = 13) + 
+  scale_color_lancet() +
+  scale_fill_lancet() + 
+  theme(axis.title.x = element_text(size = 13), 
+        axis.title.y = element_text(size = 13), 
+        legend.title = element_text(size = 13), 
+        legend.text = element_text(size = 12), 
+        legend.position = c(0.04, 0.96), legend.justification = c(0, 1),
+        legend.background = element_rect(color = "gray70"))
+```
+
+```{r}
+pred_mat <- expand.grid(weather = df$weather %>% unique, temperature = seq(0, 30, 0.5)) %>% 
+  mutate(weathersunny = ifelse(weather == "sunny", 1, 0)) 
+
+pred_bx    <- dup_mcmc(mcmc_Intercept, nrow(pred_mat)) + 
+  pred_mat$temperature %*% t(mcmc_temperature) + 
+  pred_mat$weathersunny %*% t(mcmc_weathersunny)
+
+pred_lambda <- exp(pred_bx)
+
+set.seed(10)
+generate_pois_pred <- function(lambdas, n_repeat){
+  res <- lapply(1:nrow(lambdas), function(i){
+    lambda_row <- lambdas[i, ]
+    sapply(lambda_row, function(x){rpois(n=n_repeat, lambda = x)}) %>% as.vector()
+  })
+  res
+}
+generated_values <- generate_pois_pred(pred_lambda, 10)
+
+qts_gen_values  <- lapply(generated_values, function(X){
+  qts <- c(mean(X), quantile(X, probs = c(0.005, 0.1, 0.5, 0.9, 0.995)))
+  names(qts) <- c("mean", "p0.5", "p10", "p50", "p90", "p99.5")
+  qts
+  }) %>% do.call(rbind, .) %>% data.frame(check.names = F)
+
+df_qts_gen_values <- bind_cols(pred_mat, qts_gen_values)
+
+df_qts_gen_values %>% ggplot() + 
+  geom_line(mapping = aes(x = temperature, y = p50, color = weather), size = 1) + 
+  geom_point(data = df, mapping = aes(x = temperature, y = fish_num, color = weather, shape = weather), size = 2) + 
+  geom_ribbon(mapping = aes( x = temperature, ymin =p0.5, ymax = p99.5, fill = weather), alpha=0.3) + 
+  theme_bw(base_size = 14, base_rect_size = 0, base_line_size = 1) +
+  scale_color_aaas() + ylim(c(0, 13)) +
+  scale_fill_aaas() + ylab("number of fish") +
+  theme(legend.position = c(0.045, 0.99), 
+        legend.justification = c(0, 1), 
+        legend.background = element_rect(size = 1, color = "gray70"))
+
+```
+
 
