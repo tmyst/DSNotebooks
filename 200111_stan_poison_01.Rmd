@@ -213,17 +213,87 @@ qts_gen_values  <- lapply(generated_values, function(X){
 
 df_qts_gen_values <- bind_cols(pred_mat, qts_gen_values)
 
+manual_colors <- c("#69B3A2", "#404080")
 df_qts_gen_values %>% ggplot() + 
   geom_line(mapping = aes(x = temperature, y = p50, color = weather), size = 1) + 
   geom_point(data = df, mapping = aes(x = temperature, y = fish_num, color = weather, shape = weather), size = 2) + 
   geom_ribbon(mapping = aes( x = temperature, ymin =p0.5, ymax = p99.5, fill = weather), alpha=0.3) + 
   theme_bw(base_size = 14, base_rect_size = 0, base_line_size = 1) +
-  scale_color_aaas() + ylim(c(0, 13)) +
-  scale_fill_aaas() + ylab("number of fish") +
+  scale_color_aaas() +
+  scale_fill_aaas() +
+  ylab("number of fish") +
+  ylim(c(0, 13)) +
   theme(legend.position = c(0.045, 0.99), 
         legend.justification = c(0, 1), 
-        legend.background = element_rect(size = 1, color = "gray70"))
+        legend.background = element_rect(size = 1, color = "gray80"))
 
 ```
 
+```{r}
+poisson_formula <- formula(fish_num ~ temperature + weather)
+data_mat <- model.matrix(poisson_formula, data = df)
+
+stan_pois <- stan(
+  file = "fish_poisson.stan",
+  data = list(
+    N = nrow(df), 
+    y = df$fish_num, 
+    weathersunny = data_mat[,3], 
+    temperature = df$temperature),
+  chains = 4,
+  iter = 2000, 
+  thin = 1, 
+  warmup = 1000
+)
+```
+
+```{r}
+stan_result <- rstan::extract(stan_pois, permuted = F)
+param_names <- dimnames(stan_result)$parameters
+
+list_qts_stan <- lapply(param_names[1:length(param_names)-1], 
+  function(name){
+    c(mean(stan_result[,,name]), quantile(stan_result[,,name], probs = c(0.025, 0.1, 0.5, 0.9, 0.975))) %>% 
+      setNames(nm = c("mean", "p2.5", "p10", "p50", "p90", "97.5"))
+    }) %>% 
+  do.call(bind_rows, .) %>% 
+  add_column(params = param_names[1:length(param_names)-1], .before = T)
+
+list_qts_stan
+```
+```{r}
+stan_Intercept      <- stan_result[,,param_names[1]] %>% as.vector() 
+stan_b_temperature  <- stan_result[,,param_names[2]] %>% as.vector()
+stan_b_weathersunny <- stan_result[,,param_names[3]] %>% as.vector()
+stan_pred_bx    <- dup_mcmc(stan_Intercept, nrow(pred_mat)) + 
+  pred_mat$temperature %*% t(stan_b_temperature) + 
+  pred_mat$weathersunny %*% t(stan_b_weathersunny)
+
+stan_pred_lambda <- exp(stan_pred_bx)
+
+set.seed(10)
+stan_generated_values <- generate_pois_pred(stan_pred_lambda, 10)
+
+stan_qts_gen_values  <- lapply(stan_generated_values, function(X){
+  qts <- c(mean(X), quantile(X, probs = c(0.005, 0.1, 0.5, 0.9, 0.995)))
+  names(qts) <- c("mean", "p0.5", "p10", "p50", "p90", "p99.5")
+  qts
+  }) %>% do.call(rbind, .) %>% data.frame(check.names = F)
+
+df_stan_qts_gen_values <- bind_cols(pred_mat, stan_qts_gen_values)
+
+manual_colors <- c("#69B3A2", "#404080")
+df_stan_qts_gen_values %>% ggplot() + 
+  geom_line(mapping = aes(x = temperature, y = p50, color = weather), size = 1) + 
+  geom_point(data = df, mapping = aes(x = temperature, y = fish_num, color = weather, shape = weather), size = 2) + 
+  geom_ribbon(mapping = aes( x = temperature, ymin =p0.5, ymax = p99.5, fill = weather), alpha=0.3) + 
+  theme_bw(base_size = 14, base_rect_size = 0, base_line_size = 1) +
+  scale_color_manual(values = manual_colors) +
+  scale_fill_manual(values = manual_colors) +
+  ylab("number of fish") +
+  ylim(c(0, 13)) +
+  theme(legend.position = c(0.045, 0.99), 
+        legend.justification = c(0, 1), 
+        legend.background = element_rect(size = 1, color = "gray80"))
+```
 
