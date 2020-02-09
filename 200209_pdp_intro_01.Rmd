@@ -1,0 +1,114 @@
+---
+title: "PDP_example"
+subtitle: "01"
+author: "tmyst" 
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extension: -ascii_identifiers
+    self_contained: true
+    lightobx: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r knitr_init, cache=FALSE, include=FALSE}
+
+rm(list = ls(all.names = T))
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(tidyverse)
+library(hrbrthemes)
+
+#library(ggfortify)
+#library(furrr)
+#library(wesanderson)
+#library(RColorBrewer)
+#library(ggthemes)
+#library(scico)
+
+#devtools::install_github("bbc/bbplot")
+#library(bbplot)
+#devtools::install_github("cttobin/ggthemr")
+#library(ggthemr)
+
+options(max.print="100")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+
+```
+
+```{r}
+data_folder <- "Data/Bike-Sharing-Dataset"
+files <- list.files(data_folder, full.names = T)
+files
+```
+```{r}
+day <- read_csv(files[[1]])
+hour <- read_csv(files[[2]])
+```
+
+```{r}
+day
+```
+```{r}
+day %>% skimr::skim()
+```
+
+```{r}
+day %>% ggplot() + geom_point(aes(x = atemp, y = cnt, color = factor(season))) + theme_bw()  
+```
+
+```{r}
+cats <- day %>% 
+  map(~length(unique(.))) %>% 
+  cbind %>% 
+  data.frame() %>% 
+  rownames_to_column() %>% 
+  unnest %>% 
+  setNames(nm = c("var", "n"))
+
+vars_implicit_catgory <- cats$var[cats$n<5]
+vars_implicit_catgory
+
+```
+
+```{r}
+lapply(vars_implicit_catgory, function(v){
+  day %>% mutate(!!sym(v) := factor(!!sym(v))) %>% 
+    ggplot() + 
+    geom_violin(aes_string(x = v, y = "cnt", color = v), fill = "gray80", alpha = 0.1) + 
+    geom_jitter(aes_string( x= v, y = "cnt", color = v), alpha = 0.2, width = 0.1) +
+    theme_light()
+})
+
+```
+
++ [Reference](https://christophm.github.io/interpretable-ml-book/limo.html)
++ [Data preprocessing](https://github.com/christophM/interpretable-ml-book/blob/master/R/get-bike-sharing-dataset.R)
+```{r}
+day <- day %>% 
+  mutate(season = factor(season), 
+         holiday = factor(holiday), 
+         workingday = factor(workingday),
+         weathersit = factor(weathersit)) %>% 
+  mutate(days_since_2011 = lubridate::interval(lubridate::ymd("2011-01-01"), dteday)/lubridate::ddays(1))
+day_m <- day %>% select(-casual, -registered, -instant, -dteday, -yr, -mnth, -weekday) 
+lm_01 <- model <- step(lm(formula = cnt ~ ., data = day_m), direction = "both");lm_01
+y_pred <- predict(object = lm_01, newdata = day %>% mutate())
+
+day %>% mutate(y_pred = y_pred) %>% ggplot() + geom_point(aes(x = cnt, y = y_pred), alpha = 0.3) + theme_bw()
+```
+
+```{r}
+
+```
+
