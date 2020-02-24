@@ -22,18 +22,6 @@ library(ggsci)
 library(tidyverse)
 library(hrbrthemes)
 
-#library(ggfortify)
-#library(furrr)
-#library(wesanderson)
-#library(RColorBrewer)
-#library(ggthemes)
-#library(scico)
-
-#devtools::install_github("bbc/bbplot")
-#library(bbplot)
-#devtools::install_github("cttobin/ggthemr")
-#library(ggthemr)
-
 options(max.print="100")
 opts_chunk$set(echo=TRUE,
                cache=TRUE,
@@ -101,14 +89,175 @@ day <- day %>%
          workingday = factor(workingday),
          weathersit = factor(weathersit)) %>% 
   mutate(days_since_2011 = lubridate::interval(lubridate::ymd("2011-01-01"), dteday)/lubridate::ddays(1))
-day_m <- day %>% select(-casual, -registered, -instant, -dteday, -yr, -mnth, -weekday) 
-lm_01 <- model <- step(lm(formula = cnt ~ ., data = day_m), direction = "both");lm_01
-y_pred <- predict(object = lm_01, newdata = day %>% mutate())
 
-day %>% mutate(y_pred = y_pred) %>% ggplot() + geom_point(aes(x = cnt, y = y_pred), alpha = 0.3) + theme_bw()
+set.seed(123)
+ind_tr <- (1:nrow(day))[ sample(x = c(T, F), size = nrow(day) , prob = c(0.7, 0.3), replace = T)]
+ind_te <- setdiff(1:nrow(day), ind_tr)
+
+day_m_tr <- day[ind_tr,] %>% mutate(split = "train")
+day_m_te <- day[ind_te,] %>% mutate(split = "test")
+
+unused_cols <- c("casual", "registered", "instant", "dteday", "yr", "mnth", "weekday", "split")
+lm_01 <- model <- step(lm(formula = cnt ~ ., data=day_m_tr %>% select(-one_of(unused_cols))), direction = "both");lm_01
+```
+
+
+```{r}
+lm_results <- list(day_m_tr, day_m_te) %>% bind_rows %>% 
+  group_by(split) %>% nest %>% 
+  mutate(pred = map(data, ~ predict(object = lm_01, newdata = .))) %>% 
+  mutate(data = map2(data, pred, ~ bind_cols(data, pred))) %>% 
+  select(data) %>% unnest %>% ungroup
+
+lm_results %>% ggplot() + 
+  geom_point(aes(x = cnt, y = V1, color = split, shape = split), size = 3, alpha = 0.3) + 
+  theme_bw() +
+  scale_color_aaas() +
+  theme(axis.text.x = element_text(size = 12), 
+        axis.title.x = element_text(size = 14), 
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(size = 14),
+        legend.background = element_rect(color = "gray70"),
+        legend.position = c(0,1), legend.justification = c(0, 1),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14)) +
+  ylab("predicted") + xlab("count") 
+
 ```
 
 ```{r}
+library(randomForest)
+rf_01 <- model <- randomForest(cnt ~ ., data = day_m_tr %>% select(-one_of(unused_cols)), importance = TRUE)
 
+tr_new <- data.frame(cnt = day_m_tr$cnt, model.matrix(cnt ~ ., data = day_m_tr %>% select(-one_of(unused_cols))) %>% data.frame %>% select(-1)) %>% add_column(split = "train", .before = 1)
+te_new <- data.frame(cnt = day_m_te$cnt, model.matrix(cnt ~ ., data = day_m_te %>% select(-one_of(unused_cols))) %>% data.frame %>% select(-1)) %>% add_column(split = "test", .before = 1)
+
+rf_02 <- randomForest(cnt ~ ., data = tr_new %>% select(-split), importance = T)
+
+rf_results_01 <- bind_rows(day_m_tr, day_m_te) %>% group_by(split) %>% nest %>% 
+  mutate(pred = map(data, ~ predict(rf_01, newdata = .))) %>% 
+  mutate(data = map2(data, pred, ~ bind_cols(data, pred))) %>% 
+  select(data) %>% unnest %>% ungroup
+
+rf_results_02 <- bind_rows(tr_new, te_new) %>% group_by(split) %>% nest %>% 
+  mutate(pred = map(data, ~ predict(rf_02, newdata = .))) %>% 
+  mutate(data = map2(data, pred, ~ bind_cols(data, pred))) %>% 
+  select(data) %>% unnest %>% ungroup
+
+rmse_rf_01 <- rf_results_01 %>% group_by(split) %>% summarize(a = sqrt(mean((V1 - cnt)^2)));rmse_rf_01
+rmse_rf_02 <- rf_results_02 %>% group_by(split) %>% summarize(a = sqrt(mean((V1 - cnt)^2)));rmse_rf_02
+rmse_lm <- lm_results %>% group_by(split) %>% summarize(a = sqrt(mean((V1 - cnt)^2)));rmse_lm
+```
+
+```{r}
+rf_results_01 %>% ggplot() + 
+  geom_point(aes(x = cnt, y = V1, color = split, fill = split, shape = split), size = 3, alpha=0.3) + 
+  theme_bw() +
+  scale_color_aaas() + 
+  theme(
+    legend.position = c(0,1),
+    legend.justification = c(0,1),
+    legend.background = element_rect(color = "gray70"),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14),
+    axis.text.x = element_text(size = 12), 
+    axis.title.x = element_text(size = 14),
+    axis.text.y = element_text(s = 12),
+    axis.title.y = element_text(s = 14)
+  ) +
+  ylab("predicted") + xlab("y")
+```
+
+```{r}
+rf_imp <- sort(randomForest::importance(rf_01, type = 1, scale = FALSE)[,1], decreasing = T)
+rf_imp %>% data.frame(importance = .) %>% 
+  rownames_to_column("feature") %>% 
+  ggplot() + 
+  geom_bar(aes(x = factor(feature,levels = names(rf_imp)), y = importance), stat="identity", fill = "skyblue3", color = "skyblue4") +
+  theme_bw() +
+  theme(axis.title.x = element_text(size = 14),
+        axis.text.x = element_text(size = 12, angle = -90),
+        axis.title.y = element_text(size = 14),
+        axis.text.y = element_text(size = 12)) +
+  xlab("factor")
+```
+```{r}
+library(pdp)
+
+ice_rf <- partial(object = rf_01, pred.var = "temp", ice = TRUE)
+plotPartial(ice_rf) 
+```
+
+#### Customized plot function 
+```{r}
+plotICE <- function(model, feature, center){
+  obj <- partial(object = model, pred.var = feature, ice = TRUE, center = center)
+  mean_obj <- obj %>% group_by(!!sym(feature)) %>% summarize(yhat = mean(yhat))
+  ggplot(obj) + 
+    geom_line(aes(x = !!sym(feature), y = yhat, group = yhat.id), alpha = 0.2) +
+    geom_line(aes(x = !!sym(feature), y = yhat), color = "dodgerblue", size = 1.2, data = mean_obj) + 
+    theme_bw() + 
+    theme(axis.title.x = element_text(size = 14), 
+          axis.title.y = element_text(size = 14), 
+          axis.text.x = element_text(size = 12),
+          axis.text.y = element_text(size = 12))
+}
+
+plotPDP <- function(model, feature, target_var, data){
+  obj   <- partial(object = model, pred.var = feature, ice = F)
+  mean_y <-  data[[target_var]] %>% mean
+  lowess_df <- lowess(x = day_m_tr[[feature]], y = day_m_tr[[target_var]]) %>% data.frame()
+  ggplot() +
+    geom_line(aes(x = !!sym(feature), y = yhat), size = 1.2, color = "dodgerblue", data = obj) +
+    geom_point(aes(x = !!sym(feature), y = !!sym(target_var)), alpha = 0.2, data = data) + 
+    geom_line(aes(x = x, y = y), data = lowess_df, color = "darkorange", size = 1.2) +
+    geom_abline(intercept = mean_y, slope = 0, color = "gray60", linetype = 2) +
+    theme_bw() + 
+    theme(axis.title.x = element_text(size = 14), 
+          axis.title.y = element_text(size = 14), 
+          axis.text.x = element_text(size = 12),
+          axis.text.y = element_text(size = 12))
+    
+}
+```
+
++ ICE (not centered)
+```{r}
+p1 <- plotICE(rf_01, "days_since_2011", F)
+p2 <- plotICE(rf_01, "temp", F)
+p3 <- plotICE(rf_01, "atemp", F)
+p4 <- plotICE(rf_01, "hum", F)
+
+gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
++ ICE (centered)
+```{r}
+p5 <- plotICE(rf_01, "days_since_2011", T)
+p6 <- plotICE(rf_01, "temp", T)
+p7 <- plotICE(rf_01, "atemp", T)
+p8 <- plotICE(rf_01, "hum", T)
+
+gridExtra::grid.arrange(p5, p6, p7, p8, nrow = 2)
+```
+
++ PDP (+ lowess)
+```{r}
+p1 <- plotPDP(rf_01, "days_since_2011", "cnt", day_m_tr)
+p2 <- plotPDP(rf_01, "temp", "cnt", day_m_tr)
+p3 <- plotPDP(rf_01, "atemp", "cnt", day_m_tr)
+p4 <- plotPDP(rf_01, "hum","cnt", day_m_tr)
+
+gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
++ PDP (3D)
+```{r}
+pdp2 <- partial(object = rf_01, pred.var = c("days_since_2011", "temp"), chull = T)
+plotPartial(pdp2)
+```
+
+```{r}
+plotPartial(pdp2, levelplot = F, drape = T, screen = list(z = -20, x = -70))
 ```
 
