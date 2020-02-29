@@ -1,0 +1,189 @@
+---
+title: "200229_GAM_01"
+author: "tmyst"
+date: "2020/2/29"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extension: -ascii_identifiers
+    self_contained: true
+    lightobx: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r knitr_init, cache=FALSE, include=FALSE}
+
+rm(list = ls(all.names = T))
+gc();gc()
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(tidyverse)
+library(hrbrthemes)
+
+options(max.print="100")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+
+```
+
+```{r}
+df <- MASS::Boston
+```
+
+```{r}
+set.seed(1290)
+```
+
+```{r}
+train_idx <- sample(1:nrow(df), size =nrow(df)* 3/4, replace = F)
+train <- df[train_idx, ]
+test  <- df %>% anti_join(train)
+
+x_train <- train %>% dplyr::select(-medv)
+y_train <- train$medv
+x_test <- test %>% dplyr::select(-medv)
+y_test <- test$medv
+```
+
+```{r}
+xmat_train <- as.matrix(x_train)
+ymat_train <- as.matrix(y_train)
+xmat_test <- as.matrix(x_test)
+ymat_test <- as.matrix(y_test)
+
+```
+
+```{r include=FALSE}
+
+library(xgboost)
+glm_01 <- glm(formula = medv~., data = train, family = gaussian)
+
+dtrain <- xgb.DMatrix(data = xmat_train, label = ymat_train)
+xgb_01 <- model <- xgboost(data = xmat_train, label = ymat_train, 
+                  nrounds = 1000, max_depth = 6, eta = 0.01, gamma = 0.6, 
+                  colsample_bytree = 0.6, min_child_weight = 1, subsample = 0.7)
+
+rms_err <- function(pred, act){
+  sqrt(mean((pred - act)^2))
+}
+
+pred_err <- function(model, x, y){
+  pred <- predict(object = model, newdata = x)
+  rms <- rms_err(pred, y)
+  rms
+}
+```
+
+```{r}
+rms_err_train_glm <- pred_err(glm_01, train, y_train);rms_err_train_glm
+rms_err_test_glm  <- pred_err(glm_01, test,  y_test);rms_err_test_glm
+
+rms_err_train_xgb <- pred_err(xgb_01, xmat_train, y_train);rms_err_train_xgb
+rms_err_test_xgb  <- pred_err(xgb_01, xmat_test , y_test);rms_err_test_xgb
+```
+
+```{r}
+make_ice_data <- function(model, var, x, n = 100){
+  var_ind <- which(colnames(x) == var )
+  col   <- x[, var]
+  range <- c(min(as.numeric(col)), max(as.numeric(col)))
+  diff  <- range[2] - range[1]
+  delta <- diff/n
+  vars  <- seq(range[1], range[2], length.out =  n)
+  x_pred_list <- lapply(vars, function(v){
+    new_data <- x
+    new_data[,var_ind] <- v
+    pred <- predict(model, newdata = new_data)
+    cbind(new_data[, var_ind], pred) %>% 
+      data.frame() %>% 
+      setNames(nm = c(var, "pred")) %>% 
+      rowid_to_column() 
+  }) %>% setNames(str_c("sim", str_pad(1:n, width = 5, side = "left", pad = "0")))
+  x_pred_list
+} %>% bind_rows
+
+make_pdp_data <- function(ice_data, var){
+  ice_data %>% group_by(!!sym(var)) %>% 
+    summarize(pred = mean(pred)) %>% 
+    add_column(rowid = max(ice_data[[1]]) + 1, .before = 1)
+}
+
+plot_ice <- function(ice_data, ice = T, pdp = T, ice_alpha = 0.3, pdp_color = "darkorange", pdp_size = 1.2){
+  var_name <- names(ice_data)[2]
+  pdp_data <- make_pdp_data(ice_data = ice_data, var_name)
+  
+  if(c(pdp, ice) %>% all){
+    ggplot() + 
+      geom_line(data = ice_data, aes(x = !!sym(var_name), y = pred, group= rowid), alpha = ice_alpha) +
+      geom_line(data = pdp_data, aes(x = !!sym(var_name), y = pred), color = pdp_color, size = pdp_size) +
+      theme_bw() +
+      theme(
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12), 
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 14)
+        )  
+  }else if(c(!pdp, !ice) %>% all){
+    ggplot()
+  }else if(pdp == F){
+    ggplot() + 
+      geom_line(data = ice_data, aes(x = !!sym(var_name), y = pred, group= rowid), alpha = ice_alpha) +
+      theme_bw() +
+      theme(
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12), 
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 14)
+        )   
+  }else if(ice == F){
+    ggplot() +
+      geom_line(data = pdp_data, aes(x = !!sym(var_name), y = pred), color = pdp_color, size = pdp_size) + 
+      theme_bw() +
+      theme(
+        axis.text.x = element_text(size = 12), 
+        axis.text.y = element_text(size = 12), 
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 14)
+        )   
+  }
+}
+
+ice_nox <- make_ice_data(model = xgb_01, var="nox", x =xmat_train, n = 100)
+
+colnames(xmat_train) %>% lapply(function(vname){
+  ice <- make_ice_data(model = xgb_01, var = vname, x = xmat_train, n = 20)
+  plot_ice(ice, ice = F, pdp = T, pdp_color = "dodgerblue", pdp_size = 1.2)
+}) 
+
+```
+
+
+
+```{r}
+library(mgcv)
+skimr::skim(df)
+```
+
+```{r}
+gam_01 <- model <- gam(medv ~ s(crim) + s(zn) + s(indus) + chas + s(nox) + s(rm) + 
+                s(age) + s(dis) + rad + s(tax) + s(ptratio) + s(black) + s(lstat), 
+              data = train, family = Gamma(log))
+plot(model, residuals = T, se = F, pages = 2)
+```
+```{r}
+pred <- predict(model, newdata = test, type = "response")
+plot(test$medv, pred, main = "GAM");curve(identity, add = T)
+```
+```{r}
+cat(" RMSE =", rms_err(test$medv, pred))
+```
+
+
