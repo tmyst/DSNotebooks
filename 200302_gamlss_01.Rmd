@@ -1,0 +1,117 @@
+---
+title: "GAMLSS_01"
+author: "Tmyst"
+date: "2020/3/2"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extension: -ascii_identifiers
+    self_contained: true
+    lightobx: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r knitr_init, cache=FALSE, include=FALSE}
+
+rm(list = ls(all.names = T))
+gc();gc()
+library(knitr)
+library(rmdformats)
+library(ggsci)
+library(tidyverse)
+library(hrbrthemes)
+
+options(max.print="100")
+opts_chunk$set(echo=TRUE,
+               cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+
+```
+
+# rent data set
+```{r}
+#install.packages("gamlss")
+library(gamlss)
+```
+
+
+```{r}
+df <- rent
+df %>% skimr::skim()
+```
+
+
+```{r}
+set.seed(1290)
+
+df <- df %>% 
+  add_column(set = sample(x = 1:nrow(df), replace = F, size = nrow(df))) %>% 
+  mutate(set = ifelse(set<=nrow(df)/4, "test", "train"))
+
+x_train <- df %>% filter(set == "train") %>% dplyr::select(-R)
+y_train <- df %>% filter(set == "train") %>% dplyr::select(R)
+
+x_test <- df %>% filter(set == "test") %>% dplyr::select(-R)
+y_test <- df %>% filter(set == "test") %>% dplyr::select(R)
+
+```
+
+# [useful example for qplot](http://www.sthda.com/english/wiki/qplot-quick-plot-with-ggplot2-r-software-and-data-visualization)
+```{r}
+y_fl  <- qplot(x = Fl, y = R, data = rent, geom="auto")+theme_bw()
+y_a   <- qplot(x = A, y = R, data = rent, geom="auto")+theme_bw()
+y_h   <- qplot(x = H, y = R, data = rent, geom="boxplot")+theme_bw()
+y_loc <- qplot(x = loc, y = R, data = rent, geom="boxplot")+theme_bw()
+gridExtra::grid.arrange(y_fl, y_a, y_h, y_loc, ncol = 2)
+```
+
+
+```{r}
+r1 <- gamlss(R ~ Fl+A+H+loc, family = NO, data = rent, trace = F)
+l1 <- lm(R ~ Fl+A+H+loc, data = rent)
+```
+
+
+```{r}
+r1 %>% coef
+```
+
+
+```{r}
+l1 %>% coef
+```
+```{r}
+fitted(r1, "sigma")[1]
+```
+
+
+```{r}
+summary(r1)
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
