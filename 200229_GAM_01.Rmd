@@ -178,12 +178,118 @@ gam_01 <- model <- gam(medv ~ s(crim) + s(zn) + s(indus) + chas + s(nox) + s(rm)
               data = train, family = Gamma(log))
 plot(model, residuals = T, se = F, pages = 2)
 ```
+
 ```{r}
 pred <- predict(model, newdata = test, type = "response")
 plot(test$medv, pred, main = "GAM");curve(identity, add = T)
 ```
+
 ```{r}
 cat(" RMSE =", rms_err(test$medv, pred))
 ```
+```{r}
+#install.packages("CASdatasets", repos = "http://dutangc.free.fr/pub/RRepos/", type="source") # こちらを採用
+#install.packages("CASdatasets", repos = "http://cas.uqam.ca/pub/R/", type="source")
+library(CASdatasets)
+```
 
+```{r}
+data("ausprivauto0405")
+ausdf <- ausprivauto0405
+```
+
+```{r}
+skimr::skim(ausdf)
+```
+
+```{r}
+ausdf$ClaimNb %>% table %>% data.frame() %>% setNames(nm = c("name", "freq")) %>% kable
+```
+
+```{r}
+ausdf$ClaimOcc %>% table %>% data.frame() %>% setNames(nm = c("name", "freq")) %>% kable
+```
+
+```{r}
+name_to_var <- function(dataframe){
+  vars <- names(dataframe)
+  for(var in vars){
+    txt <- str_c("var.", var, " <- '", var, "'")
+    print(txt)
+    eval(parse(text = txt), envir = .GlobalEnv)
+  }
+}
+name_to_var(ausdf)
+skimr::skim(ausdf)
+
+fct_vars <- c(var.VehAge, var.VehBody, var.Gender,var.DrivAge)
+factor_vs_claims <- lapply(fct_vars, function(var){
+  ausdf %>% 
+    group_by(!!sym(var)) %>% 
+    summarize(sumOcc = sum(!!sym(var.ClaimOcc)), ratio = sum(ClaimNb)/sum(Exposure)) %>% 
+    arrange(ratio)
+}) %>% setNames(nm = fct_vars)
+
+lapply(fct_vars, function(var){
+factor_vs_claims[[var]] %>% 
+  ggplot() + 
+  geom_bar(aes(x = !!sym(var), y = ratio), stat = "identity", color = "skyblue3", fill = "skyblue4") +
+  theme_bw()
+})
+```
+
+```{r}
+data.frame(fct = ausdf$VehAge, ind = ausdf$VehAge %>% unique %>% as.integer()) %>% arrange(ind)
+levels(ausdf$VehAge) <- c("oldest cars", "old cars", "young cars", "youngest cars")
+data.frame(fct = ausdf$VehAge, ind = ausdf$VehAge %>% unique %>% as.integer()) %>% arrange(ind)
+```
+
+```{r}
+data.frame(fct = ausdf$DrivAge %>% unique, ind = ausdf$DrivAge %>% unique %>% as.integer()) %>% arrange(ind)
+levels(ausdf$DrivAge) <- c("oldest people", "old people", 
+                           "older work. people", "working people", 
+                           "young people", "youngest people")
+data.frame(fct = ausdf$DrivAge %>% unique, ind = ausdf$DrivAge %>% unique %>% as.integer()) %>% arrange(ind)
+```
+```{r}
+set.seed(1890)
+df <- ausdf %>% 
+  mutate(VehAge = as.integer(VehAge)) %>% 
+  mutate(DrivAge = as.integer(DrivAge)) %>% 
+  add_column(set = sample(1:nrow(ausdf), replace = F)) %>% 
+  mutate(set = ifelse(set <= nrow(ausdf)/4, "test", "train"))
+
+```
+```{r}
+#devtools::install_github("kkondo1981/aglm", build_vignettes = T)
+library(aglm)
+aus_xy  <- cbind(logExpo = log(df[[var.Exposure]]), df[, 1:8])
+x_train <- aus_xy[df$set == "train", 1:7]
+x_test  <- aus_xy[df$set == "test", 1:7]
+y_train <- aus_xy[df$set == "train", var.ClaimNb]
+y_Nb_test  <- aus_xy[df$set == "test", var.ClaimNb]
+y_Occ_test <- aus_xy[df$set == "test", var.ClaimOcc]
+
+```
+
+```{r}
+set.seed(1009)
+cv.model <- cv.aglm( 
+  x = x_train,
+  y = y_train, 
+  family = "poisson", 
+  add_linear_columns = F, 
+  alpha = 1, 
+  lambda = 0.1^seq(1, 4, length.out = 100)
+  )
+
+lambda.min <- cv.model@lambda.min;lambda.min
+```
+
+```{r}
+plot(cv.model, s = lambda.min, verbose = 0)
+```
+```{r}
+cv.model@lambda.min
+```
 
