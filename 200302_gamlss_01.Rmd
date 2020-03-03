@@ -179,8 +179,10 @@ plot(gmls_02)
 plot(gmls_03)
 ```
 
++ Applying spline
 ```{r}
-
+gmls_04 <- gamlss(R ~ pb(Fl)+pb(A)+H+loc+L+B, data =df, family = GA, trace = F)
+AIC(gmls_02, gmls_04)
 ```
 
 ```{r}
