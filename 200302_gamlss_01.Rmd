@@ -64,52 +64,132 @@ y_test <- df %>% filter(set == "test") %>% dplyr::select(R)
 
 # [useful example for qplot](http://www.sthda.com/english/wiki/qplot-quick-plot-with-ggplot2-r-software-and-data-visualization)
 ```{r}
-y_fl  <- qplot(x = Fl, y = R, data = rent, geom="auto")+theme_bw()
-y_a   <- qplot(x = A, y = R, data = rent, geom="auto")+theme_bw()
-y_h   <- qplot(x = H, y = R, data = rent, geom="boxplot")+theme_bw()
-y_loc <- qplot(x = loc, y = R, data = rent, geom="boxplot")+theme_bw()
-gridExtra::grid.arrange(y_fl, y_a, y_h, y_loc, ncol = 2)
+theme_set(theme_bw())
+y_fl  <- qplot(x = Fl, y = R, data = rent, geom="auto")
+y_a   <- qplot(x = A, y = R, data = rent, geom="auto")
+
+y_sp <- qplot(x = factor(Sp), y = R, data = rent, geom = "boxplot")
+y_sm <- qplot(x = factor(Sm), y = R, data = rent, geom = "boxplot")
+y_b   <- qplot(x = B, y = R, data = rent, geom="boxplot");y_b
+y_h   <- qplot(x = H, y = R, data = rent, geom="boxplot")
+y_loc <- qplot(x = loc, y = R, data = rent, geom="boxplot")
+y_l <- qplot(x = L, y = R, data = rent, geom = "boxplot")
+
+g_num <- gridExtra::arrangeGrob(y_fl, y_a, nrow = 2)
+g_cat <- gridExtra::arrangeGrob(y_b, y_h, y_l, y_loc, y_sp, y_sm, ncol = 2)
+plot(g_num)
+```
+```{r}
+plot(g_cat)
 ```
 
 
 ```{r}
-r1 <- gamlss(R ~ Fl+A+H+loc, family = NO, data = rent, trace = F)
-l1 <- lm(R ~ Fl+A+H+loc, data = rent)
+gmls_01 <- gamlss(R ~ Fl+A+H+loc+B+L, family = NO, data = rent, trace = F)
+lm_01 <- lm(R ~ Fl+A+H+loc+B+L, data = rent)
 ```
 
 
 ```{r}
-r1 %>% coef
+gmls_01 %>% coef
 ```
 
 
 ```{r}
-l1 %>% coef
-```
-```{r}
-fitted(r1, "sigma")[1]
+lm_01 %>% coef
 ```
 
-
 ```{r}
-summary(r1)
+fitted(gmls_01, "sigma")[1]
 ```
 
 
 ```{r}
+summary(gmls_01)
+```
+
+
+```{r}
+gmls_02 <-  gamlss(R ~ Fl+A+H+loc+B+L, family=GA,  data=rent)
+```
+
+
+```{r}
+gmls_02 %>% summary
+```
+
+```{r}
+coef(gmls_02)
+```
+
+```{r}
+coef(gmls_02, "sigma")
+```
+
+$$\rm{Dev}_{\small\rm{GAMLSS}} = -2\mathrm{log}{\it\hat{L}}_{current-model}$$
+```{r}
+deviance(gmls_02)
+```
+
+ˆ
+```{r}
+lm_02 <- glm(R~Fl+A+H+loc+B+L, family=Gamma(link = "log"), data = rent)
+summary(lm_02)
+```
+
+```{r}
+lm_02 %>% summary %>% attributes
+list(
+  summary(lm_02)$call
+  ,summary(lm_02)$terms
+  ,summary(lm_02)$family
+  ,summary(lm_02)$deviance
+  ,summary(lm_02)$aic
+  ,summary(lm_02)$contrasts
+  ,summary(lm_02)$df.residual
+  ,summary(lm_02)$null.deviance
+  ,summary(lm_02)$df.null
+  ,summary(lm_02)$iter
+  ,summary(lm_02)$deviance.resid
+  ,summary(lm_02)$coefficients
+  ,summary(lm_02)$aliased
+  ,summary(lm_02)$dispersion
+  ,summary(lm_02)$df
+  ,summary(lm_02)$cov.unscaled
+  ,summary(lm_02)$cov.scaled
+)
 
 ```
 
+$$\rm{Dev}_{\rm\small{GLM}} = -2log\left(\frac{{\it{L}}_{current-model}}{{\it{L}}_{saturated}}\right)$$
+```{r}
+deviance(lm_02)
+```
+$$\rm{GAIC}=-2\mathrm{log}{\it\hat{L}}_c + (\kappa \times df)$$
+```{r}
+gmls_03 <- gamlss(R ~ Fl+A+H+loc+B+L, family=IG, data=rent, trace=FALSE)
+GAIC(gmls_01, gmls_02, gmls_03, k=0)
+```
+
+```{r}
+plot(gmls_02)
+```
+
+```{r}
+plot(gmls_03)
+```
 
 ```{r}
 
 ```
 
-
 ```{r}
 
 ```
 
+```{r}
+
+```
 
 ```{r}
 
