@@ -186,7 +186,7 @@ AIC(gmls_02, gmls_04)
 ```
 
 ```{r}
-
+summary(gmls_04)
 ```
 
 ```{r}
