@@ -289,9 +289,63 @@ plotpersp(fit, bmi, fiber, categ = "factor(vituse)",
           data = plasma, main = "by vituse", ngrid = 41, th = 120,
           nticks = 5, ticktype = "detailed", cex.axis = .6)
 ```
+```{r}
+set.seed(123)
+n <- 100
+x <- rep(0:4, each = 20)
+z <- rep(c("a", "b"), 50)
+y <- x + I(z == "a") + rnorm(n, 1)
+sim1 <- data.frame(x=factor(x), z=z, y=y)
+
+qplot(x = factor(!!sym(x)), y, geom = "boxplot") +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12), 
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 14))
+```
 
 ```{r}
+set.seed(123)
+n <- 100
+x <- rep(0:4, each = 20) 
+z <- rep(c("a", "b"), 50)
+y <- x + (z == "a") + rnorm(n, 1)
 
+qplot(x = factor(x), y= y,geom = "boxplot") +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12), 
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 14))
+```
+
+```{r}
+fit_tree <- cgam(y ~ tree(x) + factor(z))
+summary(fit_tree)
+```
+```{r}
+data.frame(x= factor(x), z = factor(z), fit = fitted(fit_tree)[,1], y = y) %>% 
+  ggplot() + 
+  geom_point(aes(x = x, y = y, color = z, shape = z), size = 2.5) + 
+  geom_line(aes(x = x, y = fit, group = z, color = z))
+```
+
+```{r}
+set.seed(123)
+n <- 20
+x <- seq(-2, 2, length = n)
+y <- - x^2 + rnorm(n)
+plot(x, y, col = "#55AA55", type = "b")
+```
+
+```{r}
+fit_umbrella <- cgam(y ~ umbrella(x))
+summary(fit_umbrella)
+```
+
+```{r}
+data.frame(x, fit = fitted(fit_umbrella), y = y) %>% 
+  ggplot() + geom_point(aes(x = x, y = y), size = 2.5, color = "gray20", shape = 1) + 
+  geom_line(aes(x = x, y = fit), color = "skyblue3")
 ```
 
 ```{r}
