@@ -189,11 +189,66 @@ AIC(gmls_02, gmls_04)
 summary(gmls_04)
 ```
 
++ cgam: An R Package for the Constrained Generalized Additive Model
 ```{r}
-
+surf <- data.frame(x1 = seq(0, 1, 0.01), x2 = seq(0, 1, 0.01)) %>% mutate(fxx = 4*(x1 + x2 -x1*x2))
+x1_y <- qplot(x = x1, y = fxx, data = surf)
+x2_y <- qplot(x = x2, y = fxx, data = surf)
+gridExtra::grid.arrange(x1_y, x2_y)
 ```
 
 ```{r}
+# install.packages("cgam")
+library(cgam)
+data("Rubber", package = "MASS")
+Rubber %>% skimr::skim()
+```
 
+```{r}
+g <- gridExtra::arrangeGrob(
+  qplot(y = loss, x = hard, data = Rubber), 
+  qplot(y = loss, x = tens, data = Rubber)
+)
+plot(g)
+```
+
+```{r}
+#install.packages("ggstatsplot")
+library(ggstatsplot)
+ggcorrmat(Rubber, sig.level = 0.1)
+```
+```{r}
+fit_decr <- cgam(loss ~ decr(hard) + decr(tens), family = gaussian, data= Rubber)
+fit_decr %>% summary
+```
+```{r}
+fit_s_decr <- cgam(loss~ s.decr(hard) + s.decr(tens), family = gaussian, data = Rubber)
+fit_s_decr %>% summary
+```
+```{r}
+fit_s <- cgam(loss ~ s(hard) + s(tens), family = gaussian, data = Rubber)
+fit_s %>% summary
+```
+
+```{r}
+g <- gridExtra::arrangeGrob(
+  qplot(x = fitted(fit_decr),   y = Rubber$loss) + xlab("fitted") + ylab("y") + ggtitle("decr"),
+  qplot(x = fitted(fit_s_decr), y = Rubber$loss) + xlab("fitted") + ylab("y") + ggtitle("s, decr"),
+  qplot(x = fitted(fit_s),      y = Rubber$loss) + xlab("fitted") + ylab("y") + ggtitle("s"),
+  grid::grid.rect(gp=grid::gpar(col="white")),
+  ncol = 2
+)
+plot(g)
+```
+```{r}
+list(fit_s$cic, fit_decr$cic, fit_s_decr$cic)
+```
+```{r}
+par(mfrow = c(1, 3))
+list(
+  plotpersp(fit_decr, hard, tens, data = Rubber, th = 120, main = "(a)", ngrid = 31),
+  plotpersp(fit_s_decr, hard, tens, data = Rubber, th = 120, main = "(b)", ngrid = 31),
+  plotpersp(fit_s, hard, tens, data = Rubber, th = 120, main = "(c)", ngrid = 31)
+)
 ```
 
