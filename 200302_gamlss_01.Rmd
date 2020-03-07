@@ -16,10 +16,10 @@ output:
 
 rm(list = ls(all.names = T))
 gc();gc()
+library(tidyverse)
 library(knitr)
 library(rmdformats)
 library(ggsci)
-library(tidyverse)
 library(hrbrthemes)
 
 options(max.print="100")
@@ -79,6 +79,7 @@ g_num <- gridExtra::arrangeGrob(y_fl, y_a, nrow = 2)
 g_cat <- gridExtra::arrangeGrob(y_b, y_h, y_l, y_loc, y_sp, y_sm, ncol = 2)
 plot(g_num)
 ```
+
 ```{r}
 plot(g_cat)
 ```
@@ -87,13 +88,8 @@ plot(g_cat)
 ```{r}
 gmls_01 <- gamlss(R ~ Fl+A+H+loc+B+L, family = NO, data = rent, trace = F)
 lm_01 <- lm(R ~ Fl+A+H+loc+B+L, data = rent)
-```
-
-
-```{r}
 gmls_01 %>% coef
 ```
-
 
 ```{r}
 lm_01 %>% coef
@@ -111,12 +107,9 @@ summary(gmls_01)
 
 ```{r}
 gmls_02 <-  gamlss(R ~ Fl+A+H+loc+B+L, family=GA,  data=rent)
-```
-
-
-```{r}
 gmls_02 %>% summary
 ```
+
 
 ```{r}
 coef(gmls_02)
@@ -243,6 +236,7 @@ plot(g)
 ```{r}
 list(fit_s$cic, fit_decr$cic, fit_s_decr$cic)
 ```
+
 ```{r}
 par(mfrow = c(1, 3))
 list(
@@ -250,5 +244,57 @@ list(
   plotpersp(fit_s_decr, hard, tens, data = Rubber, th = 120, main = "(b)", ngrid = 31),
   plotpersp(fit_s, hard, tens, data = Rubber, th = 120, main = "(c)", ngrid = 31)
 )
+```
+```{r}
+data("plasma", package = "cgam")
+inspect <- plasma %>% mosaic::inspect()
+inspect
+```
+```{r}
+plasma %>% map(~unique(.) %>% length) %>% unlist
+```
++ for categorical variables
+```{r}
+qp_list <- lapply(c("smoke", "vituse"), function(x){
+  qplot(x = factor(!!sym(x)), y = logplasma, data = plasma, geom = "boxplot")
+})
+do.call(gridExtra::grid.arrange, c(qp_list, list(ncol = 2)))
+```
++ for numerical variables
+```{r}
+qp_list <- lapply(names(plasma)[2:7], function(x){
+  qplot(x = !!sym(x), y = logplasma, data = plasma, geom = "auto")
+  })
+g <- do.call(gridExtra::arrangeGrob, c(qp_list, list(ncol = 2)))
+plot(g)
+```
+
+```{r}
+fit <- cgam(logplasma ~ s.decr(bmi) + 
+              s.decr(logdietfat) + s.decr(cholest) + 
+              s.incr(fiber) + s.incr(betacaro) + 
+              s.incr(retinol) + factor(smoke) + factor(vituse), 
+            data = plasma)
+summary(fit)
+```
+
+```{r}
+par(mfrow = c(1,2))
+
+plotpersp(fit, bmi, fiber, categ = "factor(smoke)", 
+          data = plasma, main = "by smoke", ngrid = 41, th = 120, 
+          nticks = 5, ticktype = "detailed", cex.axis = .6)
+
+plotpersp(fit, bmi, fiber, categ = "factor(vituse)", 
+          data = plasma, main = "by vituse", ngrid = 41, th = 120,
+          nticks = 5, ticktype = "detailed", cex.axis = .6)
+```
+
+```{r}
+
+```
+
+```{r}
+
 ```
 
