@@ -16,6 +16,7 @@ output:
 ```{r knitr_init, cache=FALSE, include=FALSE}
 
 rm(list = ls(all.names = T))
+gc();gc()
 library(knitr)
 library(rmdformats)
 library(ggsci)

@@ -294,14 +294,15 @@ set.seed(123)
 n <- 100
 x <- rep(0:4, each = 20)
 z <- rep(c("a", "b"), 50)
-y <- x + I(z == "a") + rnorm(n, 1)
+y <- x + (z == "a") + rnorm(n, 1)
 sim1 <- data.frame(x=factor(x), z=z, y=y)
 
-qplot(x = factor(!!sym(x)), y, geom = "boxplot") +
+qplot(x = z, y, data = sim1, geom = "boxplot") +
   theme(axis.text.x = element_text(size = 12),
         axis.text.y = element_text(size = 12), 
         axis.title.x = element_text(size = 14), 
         axis.title.y = element_text(size = 14))
+
 ```
 
 ```{r}
