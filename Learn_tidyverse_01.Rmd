@@ -1,0 +1,100 @@
+---
+title: "Learn_tidyverse_01"
+author: "tmyst"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: zenburn
+    md_extension: -ascii_identifiers
+    self_contained: true
+    lightobx: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+```
+
+```{r include=FALSE}
+path <- "/Users/tomoya/Rprojects/GitHubShare/DSNotebooks/Data/datasets_99214_241651_mr-boston-flattened.csv"
+cocktails <- read_csv(path)
+```
+
+
+Tidy data is data where:
+1. Every column is variable.
+2. Every row is an observation.
+3. Every cell is a single value.
+
+```{r}
+cocktails %>% count(category, sort = T)
+cocktails
+```
+
+tidyr functions fall into five main categories:
+
+1. Pivotting
+2. Rectangling
+3. Nesting
+4. Splitting and combining of character values
+5. Deatling with NA
+
+```{r}
+cocktails %>% count(name) %>% filter(n>1) # confirm that name can be the key
+cocktails %>% 
+  pivot_longer(cols = starts_with("measurement"), 
+               names_to = "measurement_index", 
+               values_to = "measurement_result"
+  )
+```
+But, we have other 6 columns containing ingredients.
+```{r}
+cocktails_tidy <- cocktails %>% 
+  pivot_longer(cols = c(starts_with("ingredient"), starts_with("measurement")),
+    names_to = c("value_type", "index"), 
+    names_sep = "-"
+  ) %>% 
+  pivot_wider(
+    names_from = value_type,
+    values_from = value
+  )
+cocktails_tidy
+```
+
+Or, if we'd like to examine how to reshape the data.frame in pivot_longer operation,
+we can use "spec" objects. "spec" can be manually modified
+```{r}
+spec <- cocktails %>% 
+  build_longer_spec(
+    cols = c(starts_with("ingredient"), starts_with("measurement")),
+    names_to = c("value_type", "index"), 
+    names_sep = "-"
+  )
+spec2 <- spec %>% mutate(.value = value_type) %>% select(-value_type)
+
+list(
+  spec2,
+  cocktails %>% pivot_longer_spec(spec2) 
+)
+```
+
+Or we can overwrite column ".value". The simplest operation will be like the following,
+```{r}
+spec <- cocktails %>% 
+  build_longer_spec(
+    cols = c(starts_with("ingredient"), starts_with("measurement")),
+    names_to = c(".value", "index"), 
+    names_sep = "-"
+  )
+
+list(
+  spec,
+  cocktails %>% pivot_longer_spec(spec)
+)
+```
+
+```{r}
+cocktails_tidy %>% count(name)
+```
+

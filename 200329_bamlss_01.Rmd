@@ -146,3 +146,147 @@ gs <- lapply(1:ncol(combs), function(i){
 do.call(gridExtra::grid.arrange, c(gs, ncol = 2))
 ```
 
+#### The response to age seems to be distributed along age^2
+```{r}
+f <- participation ~ income + age + education + youngkids + oldkids + foreign + I(age^2)
+b <- bamlss(f, family = "binomial", data = SwissLabor)
+```
+
+```{r}
+summary(b)
+```
+
+```{r}
+plot(b, which = c("samples", "max-acf"))
+```
+
+```{r}
+nd <- data.frame(income = 11, age = seq(2, 6.2, length = 100), education = 12, youngkids = 1, oldkids = 1, foreign = "no")
+nd$pSwiss <- predict(b, newdata = nd, type = "parameter", FUN = c95)
+nd$foreign <- "yes"
+nd$pForeign <- predict(b, newdata = nd, type = "parameter", FUN = c95)
+
+```
+
+```{r}
+blues <- function(n, ...) sequential_hcl(n, "Blues", rev = T)
+{
+  plot2d(pSwiss ~ age, data = nd, ylab = "participation", ylim = range(c(nd$pSwiss, nd$pForeign)), fill.select = c(0,1,0,1))
+  plot2d(pForeign ~ age, data = nd, add = T, fill.select = c(0,1,0,1), axes = F, s2.col = blues, col.lines = blues(1))
+}
+
+
+```
+
+```{r}
+f2 <- participation ~ income + education + youngkids + oldkids + foreign + s(age, k = 10)
+set.seed(123)
+b2 <- bamlss(f, family = "binomial", data = SwissLabor)
+```
+```{r}
+summary(b2)
+```
+
+```{r}
+plot(b2, which = c("samples", "max-acf"))
+```
+```{r}
+plot(b2, term = "s(age)")
+```
+
+```{r}
+nd2 <- nd
+nd2$foreign <- "no"
+nd2$pSwiss <- predict(object = b2, newdata = nd2, type = "parameter", FUN = c95)
+nd2$foreign <- "yes"
+nd2$pForeign <- predict(object = b2, newdata = nd2, type = "parameter", FUN = c95)
+{
+  plot2d(pSwiss ~ age, data = nd2, ylab = "participation", ylim = range(c(nd$pSwiss, nd$pForeign)), fill.select = c(0,1,0,1))
+  plot2d(pForeign ~ age, data = nd2, add = T, fill.select = c(0,1,0,1), axes = F, s2.col = blues, col.lines = blues(1))
+}
+
+```
+#### Varialbe selection
+```{r}
+df <- SwissLabor
+df <- df %>% mutate(cage = cut(age, breaks = quantile(age, probs = seq(0, 1, length.out = 11)), i = T, ordered_result = T))
+
+```
+
+```{r}
+f3 <- participation ~ income + education + youngkids + oldkids + foreign + la(cage, fuse = 2)
+b3 <- bamlss(f3, family = "binomial", data = df, optimizer = lasso, sampler = F, criterion = "BIC", upper = exp(5), lower = 1)
+```
+```{r}
+summary(b3)
+```
+```{r, fig.height=5}
+pathplot(b3)
+
+```
+```{r}
+df$page <- predict(b3, term = "cage", intercept = F, mstop = lasso_stop(b3))
+plot2d(page ~ age, data = df, rug = T)
+```
+
+```{r}
+data("mcycle", package = "MASS")
+mcycle %>% skimr::skim()
+```
+
+```{r}
+mcycle
+```
+
+```{r}
+qplot(x = times, y = accel, data = mcycle)
+f4 <- accel ~ s(times)
+b4 <- bamlss(f4, family = "gaussian", data = mcycle)
+```
+```{r}
+summary(b4)
+```
+
+```{r}
+plot(b4)
+```
+
+```{r}
+f5 <- list(accel ~ s(times, k = 20), sigma ~ s(times, k = 20))
+set.seed(456)
+b5 <- bamlss(f5, family = "gaussian", data = mcycle)
+```
+```{r}
+plot(b5, model = c("mu", "sigma"))
+```
+```{r}
+residuals(b5) %>% plot
+```
+```{r}
+plot(b5, which = c("hist-resid", "qq-resid"))
+```
+```{r}
+DIC(b4)
+```
+#### design
+```{r}
+df <- SwissLabor
+f <- participation ~ income + age + education + youngkids + oldkids + age + I(age^2)
+bf <- bamlss.frame(f, data = df, family = "binomial")
+summary(bf)
+```
+#### backfitting estimation to decide starting values for the MCMC sampler
+```{r}
+pm <- with(bf, bfit(x, y, family))
+```
+
+```{r}
+set.seed(124)
+samps <- with(bf, GMCMC(x, y, family, start = pm$parameters))
+```
+
+```{r}
+stats <- with(bf, samplestats(samps, x, y, family))
+stats
+```
+
