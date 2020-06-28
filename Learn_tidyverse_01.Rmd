@@ -94,7 +94,35 @@ list(
 )
 ```
 
+extract from regular expression
 ```{r}
-cocktails_tidy %>% count(name)
+frchar2num <- function(chars){
+  a <- as.numeric(str_extract(chars, "^.+(?=/)"))
+  b <- as.numeric(str_extract(chars, "(?<=/).+"))
+  return(a/b)
+}
+
+cocktails_tidy_2 <- cocktails_tidy %>% 
+  select(-instructions, -glass, -`glass-size`) %>% 
+  mutate(ingredient = if_else(is.na(ingredient)&(!is.na(measurement)), measurement, ingredient)) %>% 
+  mutate(measurement = if_else(ingredient == measurement, NA_character_, measurement)) %>% 
+  extract(measurement, into = c("unit"), regex = "^.+\\s(.*)$", remove = F) %>% 
+  extract(measurement, into = c("value1"), regex = "(^\\d+)", remove = F) %>% 
+  extract(measurement, into = c("value2"), regex = ".*(\\d{1,9}/\\d{1,9})", remove = F) %>% 
+  mutate(measurement = if_else(is.na(value2), as.numeric(value1),  as.numeric(value1) + frchar2num(value2))) %>% 
+  select(-value1, -value2)
+cocktails_tidy_2
+```
+one step function to do the same as 
+group_by(id) %>%  mutate(n=n()) %>%  ungroup()
+```{r}
+cocktails %>% select(name, category) %>% add_count(category)
+```
+
+how to add count columns by conditions using weight argument 
+```{r}
+cocktails_tidy_2 %>% 
+  add_count(category, name = "n_category", wt = (index==1)) %>% # count if index == 1
+  add_count(ingredient, wt = !is.na(ingredient)) # count if ingredient is not NA 
 ```
 
