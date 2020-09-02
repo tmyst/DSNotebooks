@@ -49,3 +49,7 @@ margCov2
 cor2 <- cov2cor((margCov2[[1]]))
 cor2
 
+
+# JM sakidori -------------------------------------------------------------
+
+library(JM)
