@@ -14,17 +14,32 @@ y <- runif(n)
 
 units(y) <- "Year"
 
+colnames(xx) <- str_c("x", seq(1,20,1))
 e <- c(rep(0, n/2), rep(1, n/2))
+d <- data.frame(cbind(xx, y, e))
+
 f <- cph(Surv(y, e) ~ xx, x = TRUE, y = TRUE, time.inc = 0.5, surv = TRUE)
 g <- coxph(Surv(y, e) ~ xx)
-f %>% class
-g %>% class
 
-cal <- calibrate(f, u=.5, B=200)
+# ブートストラプサンプルを使ってクロスバリデーションを行う
+# overfitによるバイアスを加味した「予測vs観測」の推定を得るため。
+# 各インターバルに対し部分的予測を用いるか、
+# またはノンパラメトリックなスムージングを行う
+# 予測値は定点における予測生存率、観測はKM法による確率
+# 何もcmethodに入れなければ以下のようにpolspline を利用してスムージングした
+# ものとなる。KMを指定した場合は、
+cal <- calibrate(f, u=.5, B=200, cmethod = "hare")
+cal2 <- calibrate(f, u=.5, B=300)
+
+attributes(cal)
+attributes(cal2)
+
 plot(cal, ylim=c(.4, 1), subtitles=T)
+plot(cal2, ylim=c(.4, 1), subtitles=T)
 
-calkm <- calibrate(f, u=.5, m=40, cmethod= "KM", B=200)
-plot(calkm , add=TRUE)
+calkm <- calibrate(f, u=.5, m=50, cmethod= "KM", B=200)
+# 青い点はKMの修正バージョン、黒はKMそのまま
+plot(calkm)
 
 
 # Proportional Hazard model -----------------------------------------------
